@@ -1,19 +1,18 @@
 import { Dish, TiffinPlan, Order, AdminSettings, OrderStatus, FirebaseConfig } from '../types';
 import { INITIAL_DISHES, INITIAL_TIFFIN_PLANS, INITIAL_SETTINGS } from '../data/initialData';
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { 
-  getFirestore, 
   collection, 
   doc, 
   setDoc, 
-  getDocs, 
   onSnapshot, 
   updateDoc, 
   deleteDoc, 
-  Firestore,
-  query,
-  orderBy
+  query, 
+  orderBy, 
+  getDocs,
+  writeBatch
 } from 'firebase/firestore';
+import { db, firebaseConfig } from './firebase';
 
 const STORAGE_KEYS = {
   DISHES: 'hellobite_dishes_v1',
@@ -23,14 +22,32 @@ const STORAGE_KEYS = {
   ACTIVE_ORDER_ID: 'hellobite_active_order_id'
 };
 
+// Sanitize objects for Firestore to prevent undefined field errors
+function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) return null as unknown as T;
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const cleanObj: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (value !== undefined) {
+        cleanObj[key] = sanitizeForFirestore(value);
+      }
+    }
+    return cleanObj as T;
+  }
+  return data;
+}
+
 class StoreService {
   private broadcastChannel: BroadcastChannel | null = null;
-  private firebaseApp: FirebaseApp | null = null;
-  private db: Firestore | null = null;
   private orderListeners: Array<(orders: Order[]) => void> = [];
   private newOrderAlertListeners: Array<(order: Order) => void> = [];
   private dishListeners: Array<(dishes: Dish[]) => void> = [];
   private settingsListeners: Array<(settings: AdminSettings) => void> = [];
+  private isConnectedToFirestore = false;
+  private knownOrderIds = new Set<string>();
 
   constructor() {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -50,49 +67,120 @@ class StoreService {
       };
     }
 
-    // Try initializing Firebase if saved
-    this.initFirebaseFromSaved();
+    // Populate initial known order IDs from cache
+    const cachedOrders = this.getOrders();
+    cachedOrders.forEach(o => this.knownOrderIds.add(o.id));
+
+    // Connect to live Firestore synchronization
+    this.initFirestoreSync();
   }
 
-  public initFirebaseFromSaved() {
-    const settings = this.getSettings();
-    if (settings.firebaseConfig && settings.firebaseConfig.apiKey && settings.useFirebaseCloud) {
-      this.setupFirebase(settings.firebaseConfig);
-    }
+  public isCloudConnected(): boolean {
+    return this.isConnectedToFirestore;
   }
 
-  public setupFirebase(config: FirebaseConfig): boolean {
+  public getFirebaseProjectId(): string {
+    return firebaseConfig.projectId;
+  }
+
+  private initFirestoreSync() {
     try {
-      if (!config.apiKey || !config.projectId) return false;
-      if (!getApps().length) {
-        this.firebaseApp = initializeApp(config);
-      } else {
-        this.firebaseApp = getApps()[0];
-      }
-      this.db = getFirestore(this.firebaseApp);
-
-      // Start realtime listening to Firestore orders
-      const ordersCol = collection(this.db, 'orders');
+      // 1. REALTIME ORDERS SYNC ACROSS ALL PHONES & ADMIN PANEL
+      const ordersCol = collection(db, 'orders');
       const q = query(ordersCol, orderBy('createdAt', 'desc'));
+
       onSnapshot(q, (snapshot) => {
-        const orders: Order[] = [];
-        snapshot.forEach((d) => orders.push(d.data() as Order));
-        if (orders.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-          this.notifyOrderListeners();
+        this.isConnectedToFirestore = true;
+        const liveOrders: Order[] = [];
+        let hasNewIncomingOrder = false;
+        let newestIncomingOrder: Order | null = null;
+
+        snapshot.forEach((docSnap) => {
+          const order = docSnap.data() as Order;
+          liveOrders.push(order);
+
+          // If this order is new to this client session and has alert flag
+          if (!this.knownOrderIds.has(order.id)) {
+            this.knownOrderIds.add(order.id);
+            if (order.isNewAlert || order.status === 'Pending') {
+              hasNewIncomingOrder = true;
+              if (!newestIncomingOrder || order.createdAt > newestIncomingOrder.createdAt) {
+                newestIncomingOrder = order;
+              }
+            }
+          }
+        });
+
+        // Always update local cache
+        localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(liveOrders));
+        this.notifyOrderListeners();
+
+        // Trigger audio alert if a new order arrived from another phone
+        if (hasNewIncomingOrder && newestIncomingOrder) {
+          this.notifyNewOrderAlert(newestIncomingOrder);
         }
       }, (err) => {
-        console.warn('Firestore orders sync notice:', err);
+        console.warn('Firestore orders live listener notice:', err);
       });
 
-      return true;
+      // 2. REALTIME DISHES / SERVICES SYNC ACROSS ALL PHONES
+      const dishesCol = collection(db, 'dishes');
+      onSnapshot(dishesCol, async (snapshot) => {
+        this.isConnectedToFirestore = true;
+        if (snapshot.empty) {
+          // Auto-seed initial dishes into Firestore once
+          console.log('Seeding initial dishes to live Firestore collection...');
+          for (const dish of INITIAL_DISHES) {
+            await setDoc(doc(db, 'dishes', dish.id), sanitizeForFirestore(dish)).catch(console.warn);
+          }
+          return;
+        }
+
+        const liveDishes: Dish[] = [];
+        snapshot.forEach((docSnap) => {
+          liveDishes.push(docSnap.data() as Dish);
+        });
+
+        // Update local cache
+        localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(liveDishes));
+        this.notifyDishListeners();
+      }, (err) => {
+        console.warn('Firestore dishes live listener notice:', err);
+      });
+
+      // 3. REALTIME GLOBAL SETTINGS & COUPONS SYNC
+      const settingsDoc = doc(db, 'config', 'settings');
+      onSnapshot(settingsDoc, async (docSnap) => {
+        this.isConnectedToFirestore = true;
+        if (!docSnap.exists()) {
+          // Auto-seed initial settings into Firestore
+          await setDoc(settingsDoc, sanitizeForFirestore(INITIAL_SETTINGS)).catch(console.warn);
+          return;
+        }
+
+        const remoteSettings = docSnap.data() as AdminSettings;
+        if (remoteSettings) {
+          const merged: AdminSettings = {
+            ...INITIAL_SETTINGS,
+            ...remoteSettings,
+            coupons: remoteSettings.coupons && remoteSettings.coupons.length > 0
+              ? remoteSettings.coupons
+              : INITIAL_SETTINGS.coupons,
+            useFirebaseCloud: true
+          };
+          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+          this.notifySettingsListeners();
+        }
+      }, (err) => {
+        console.warn('Firestore settings live listener notice:', err);
+      });
+
     } catch (e) {
-      console.error('Firebase setup failed:', e);
-      return false;
+      console.error('Failed to initialize Firestore sync:', e);
     }
   }
 
-  // --- DISHES ---
+  // --- DISHES (SERVICES) ---
   public getDishes(): Dish[] {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.DISHES);
@@ -100,11 +188,11 @@ class StoreService {
     } catch {
       // fallback
     }
-    localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(INITIAL_DISHES));
     return INITIAL_DISHES;
   }
 
   public saveDish(dish: Dish): Dish {
+    // Optimistic local update
     const dishes = this.getDishes();
     const index = dishes.findIndex(d => d.id === dish.id);
     let updated: Dish[];
@@ -118,23 +206,25 @@ class StoreService {
     this.broadcastMessage('DISHES_CHANGED', null);
     this.notifyDishListeners();
 
-    // Firebase sync if active
-    if (this.db) {
-      setDoc(doc(this.db, 'dishes', dish.id), dish).catch(console.warn);
-    }
+    // Direct write to Firestore live collection (reflects globally on all phones)
+    setDoc(doc(db, 'dishes', dish.id), sanitizeForFirestore(dish)).catch((err) => {
+      console.error('Error syncing dish to Firestore:', err);
+    });
 
     return dish;
   }
 
   public deleteDish(dishId: string) {
+    // Optimistic local update
     const dishes = this.getDishes().filter(d => d.id !== dishId);
     localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(dishes));
     this.broadcastMessage('DISHES_CHANGED', null);
     this.notifyDishListeners();
 
-    if (this.db) {
-      deleteDoc(doc(this.db, 'dishes', dishId)).catch(console.warn);
-    }
+    // Direct delete in Firestore (removes globally on all phones)
+    deleteDoc(doc(db, 'dishes', dishId)).catch((err) => {
+      console.error('Error deleting dish from Firestore:', err);
+    });
   }
 
   public toggleDishAvailability(dishId: string): boolean {
@@ -165,11 +255,10 @@ class StoreService {
     } catch {
       // fallback
     }
-    localStorage.setItem(STORAGE_KEYS.TIFFIN_PLANS, JSON.stringify(INITIAL_TIFFIN_PLANS));
     return INITIAL_TIFFIN_PLANS;
   }
 
-  // --- ORDERS ---
+  // --- ORDERS & TASK REQUESTS ---
   public getOrders(): Order[] {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.ORDERS);
@@ -192,21 +281,24 @@ class StoreService {
       isNewAlert: true
     };
 
+    // Track locally
+    this.knownOrderIds.add(newOrder.id);
     const orders = [newOrder, ...this.getOrders()];
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
     localStorage.setItem(STORAGE_KEYS.ACTIVE_ORDER_ID, newOrder.id);
 
-    // Broadcast in real-time to other windows/tabs
+    // Broadcast across current device tabs
     this.broadcastMessage('NEW_ORDER', newOrder);
     this.notifyOrderListeners();
     this.notifyNewOrderAlert(newOrder);
 
-    // Sync to Firestore if configured
-    if (this.db) {
-      setDoc(doc(this.db, 'orders', newOrder.id), newOrder).catch(err => {
-        console.warn('Could not push order to Firestore:', err);
-      });
-    }
+    // CRITICAL: Write directly to Firebase Firestore live collection
+    // This immediately syncs to the central Admin Panel so Satyam Singh sees it on his phone in real time
+    setDoc(doc(db, 'orders', newOrder.id), sanitizeForFirestore(newOrder)).then(() => {
+      console.log('Order successfully synced to Firestore:', newOrder.id);
+    }).catch(err => {
+      console.error('Error syncing order to Firestore:', err);
+    });
 
     return newOrder;
   }
@@ -223,9 +315,14 @@ class StoreService {
       this.broadcastMessage('ORDER_UPDATED', order);
       this.notifyOrderListeners();
 
-      if (this.db) {
-        updateDoc(doc(this.db, 'orders', orderId), { status, isNewAlert: order.isNewAlert }).catch(console.warn);
-      }
+      // Direct write to Firestore to update status across all customer phones
+      updateDoc(doc(db, 'orders', orderId), { 
+        status, 
+        isNewAlert: order.isNewAlert 
+      }).catch(err => {
+        console.error('Error updating order status in Firestore:', err);
+      });
+
       return order;
     }
     return null;
@@ -239,6 +336,8 @@ class StoreService {
         if (o.isNewAlert) {
           o.isNewAlert = false;
           changed = true;
+          // Sync alert acknowledge to Firestore
+          updateDoc(doc(db, 'orders', o.id), { isNewAlert: false }).catch(() => {});
         }
       }
     });
@@ -267,19 +366,34 @@ class StoreService {
     this.broadcastMessage('ORDERS_CHANGED', null);
     this.notifyOrderListeners();
 
-    if (this.db) {
-      deleteDoc(doc(this.db, 'orders', orderId)).catch(console.warn);
-    }
+    // Delete in Firestore
+    deleteDoc(doc(db, 'orders', orderId)).catch(err => {
+      console.error('Error deleting order from Firestore:', err);
+    });
   }
 
-  public clearAllOrders() {
+  public async clearAllOrders() {
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
     this.clearActiveCustomerOrder();
     this.broadcastMessage('ORDERS_CHANGED', null);
     this.notifyOrderListeners();
+
+    // Batch delete all order documents from Firestore
+    try {
+      const ordersCol = collection(db, 'orders');
+      const snapshot = await getDocs(ordersCol);
+      const batch = writeBatch(db);
+      snapshot.forEach((d) => {
+        batch.delete(d.ref);
+      });
+      await batch.commit();
+      console.log('All orders cleared from Firestore');
+    } catch (e) {
+      console.error('Error clearing orders from Firestore:', e);
+    }
   }
 
-  // --- SETTINGS ---
+  // --- SETTINGS & COUPONS ---
   public getSettings(): AdminSettings {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -288,21 +402,32 @@ class StoreService {
         return {
           ...INITIAL_SETTINGS,
           ...parsed,
-          coupons: parsed.coupons && parsed.coupons.length > 0 ? parsed.coupons : INITIAL_SETTINGS.coupons
+          coupons: parsed.coupons && parsed.coupons.length > 0 ? parsed.coupons : INITIAL_SETTINGS.coupons,
+          useFirebaseCloud: true
         };
       }
     } catch {
       // fallback
     }
-    return INITIAL_SETTINGS;
+    return {
+      ...INITIAL_SETTINGS,
+      useFirebaseCloud: true
+    };
   }
 
   public saveSettings(settings: AdminSettings) {
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-    this.broadcastMessage('SETTINGS_CHANGED', settings);
-    if (settings.firebaseConfig && settings.useFirebaseCloud) {
-      this.setupFirebase(settings.firebaseConfig);
-    }
+    const cleanSettings = {
+      ...settings,
+      useFirebaseCloud: true
+    };
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(cleanSettings));
+    this.broadcastMessage('SETTINGS_CHANGED', cleanSettings);
+    this.notifySettingsListeners();
+
+    // Direct write to Firestore so coupons, helpline, etc. sync to every user
+    setDoc(doc(db, 'config', 'settings'), sanitizeForFirestore(cleanSettings), { merge: true }).catch(err => {
+      console.error('Error syncing settings to Firestore:', err);
+    });
   }
 
   public resetDemoData() {
@@ -313,6 +438,12 @@ class StoreService {
     this.broadcastMessage('ORDERS_CHANGED', null);
     this.notifyDishListeners();
     this.notifyOrderListeners();
+
+    // Reset Firestore dishes
+    INITIAL_DISHES.forEach(dish => {
+      setDoc(doc(db, 'dishes', dish.id), sanitizeForFirestore(dish)).catch(() => {});
+    });
+    setDoc(doc(db, 'config', 'settings'), sanitizeForFirestore(INITIAL_SETTINGS)).catch(() => {});
   }
 
   // --- SUBSCRIPTIONS ---

@@ -37,6 +37,7 @@ import { DishModal } from './DishModal';
 import { FirebaseGuideModal } from './FirebaseGuideModal';
 import { CouponManager } from './CouponManager';
 import { getWhatsAppOrderUrl } from '../utils/notifications';
+import { storeService } from '../services/storeService';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -842,6 +843,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       {settings.helplineNumber}
                     </a>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Firestore Database Sync Card */}
+            <div className="bg-emerald-950/80 border border-emerald-500/40 rounded-3xl p-5 text-white shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                  </span>
+                  <h4 className="font-display font-extrabold text-base text-emerald-200">
+                    Live Cloud Firestore Database: Connected
+                  </h4>
+                </div>
+                <span className="bg-emerald-500/20 text-emerald-300 text-xs font-mono font-bold px-3 py-1 rounded-full border border-emerald-500/30 w-fit">
+                  Project: {storeService.getFirebaseProjectId()}
+                </span>
+              </div>
+
+              <p className="text-xs text-emerald-100/80 leading-relaxed">
+                All food service listings, dishes, task &amp; booking requests, and customer orders are synced in real-time to Google Cloud Firestore. Any dish or price update you make here instantly reflects across all phones globally.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                <div className="bg-emerald-900/40 border border-emerald-500/20 rounded-xl p-2.5 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Real-time Orders on Admin Phone</span>
+                </div>
+                <div className="bg-emerald-900/40 border border-emerald-500/20 rounded-xl p-2.5 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Global Menu &amp; Price Sync</span>
+                </div>
+                <div className="bg-emerald-900/40 border border-emerald-500/20 rounded-xl p-2.5 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Auto Real-time Revenue Tally</span>
                 </div>
               </div>
             </div>

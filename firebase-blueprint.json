@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Dish": {
+      "title": "Dish",
+      "description": "Menu dish or food item offered by Hello Bite",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "hindiName": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "description": { "type": "string" },
+        "isVeg": { "type": "boolean" },
+        "isAvailable": { "type": "boolean" },
+        "image": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewsCount": { "type": "number" },
+        "isPopular": { "type": "boolean" },
+        "preparationTime": { "type": "string" },
+        "spiceLevel": { "type": "string" }
+      },
+      "required": ["id", "name", "price", "isVeg", "isAvailable"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer food delivery order or task request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "deliveryAddress": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "deliveryCharge": { "type": "number" },
+        "deliveryTip": { "type": "number" },
+        "discount": { "type": "number" },
+        "total": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "orderNumber", "customerName", "phone", "deliveryAddress", "total", "status", "createdAt"]
+    },
+    "AdminSettings": {
+      "title": "AdminSettings",
+      "description": "Global operational settings, helpline details, and coupons",
+      "type": "object",
+      "properties": {
+        "contactPersonName": { "type": "string" },
+        "helplineNumber": { "type": "string" },
+        "adminPassword": { "type": "string" }
+      },
+      "required": ["contactPersonName", "helplineNumber"]
+    }
+  },
+  "firestore": {
+    "/dishes/{dishId}": {
+      "schema": "#/entities/Dish",
+      "description": "Live collection of dishes synced across all customer devices and admin panels"
+    },
+    "/orders/{orderId}": {
+      "schema": "#/entities/Order",
+      "description": "Live collection of customer orders and requests synced in real-time"
+    },
+    "/config/{configId}": {
+      "schema": "#/entities/AdminSettings",
+      "description": "Global operational settings, helpline details, and coupon configuration"
+    }
+  }
+}
