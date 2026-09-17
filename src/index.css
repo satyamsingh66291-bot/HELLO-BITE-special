@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+@keyframes pulse-banner {
+  0%, 100% {
+    background-color: #dc2626;
+    transform: scale(1);
+  }
+  50% {
+    background-color: #b91c1c;
+    transform: scale(1.01);
+  }
+}
+
+.animate-warning-banner {
+  animation: pulse-banner 1.2s infinite ease-in-out;
+}
+
+@keyframes ring-chime {
+  0%, 100% { transform: rotate(0); }
+  20%, 60% { transform: rotate(15deg); }
+  40%, 80% { transform: rotate(-15deg); }
+}
+
+.animate-chime-ring {
+  animation: ring-chime 0.8s infinite ease-in-out;
+}
+

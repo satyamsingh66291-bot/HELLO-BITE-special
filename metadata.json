@@ -1,0 +1,6 @@
+{
+  "name": "Hello Bite",
+  "description": "Mobile-first food delivery and daily tiffin subscription app with real-time order tracking, menu management, loud audio alert chimes, and WhatsApp/Telegram admin notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
