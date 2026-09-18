@@ -451,7 +451,7 @@ export const SpecialCartDrawer: React.FC<SpecialCartDrawerProps> = ({
 
           {/* Footer Proceed Button */}
           {cartItems.length > 0 && (
-            <div className="p-4 bg-white border-t border-stone-200 space-y-2">
+            <div className="p-4 bg-white border-t border-stone-200 space-y-2 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
               <div className="flex items-center justify-between text-xs text-stone-500">
                 <span>To Pay:</span>
                 <span className="text-xl font-extrabold text-stone-900">₹{grandTotal}</span>

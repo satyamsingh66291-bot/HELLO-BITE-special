@@ -20,6 +20,8 @@ import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { CustomerOrderHistoryModal } from './components/CustomerOrderHistoryModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboard } from './components/AdminDashboard';
+import { BottomNavBar, AppNavTab } from './components/BottomNavBar';
+import { AppMoreModal } from './components/AppMoreModal';
 import { 
   Utensils, 
   Sparkles, 
@@ -60,6 +62,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Modals & Navigation
+  const [activeNavTab, setActiveNavTab] = useState<AppNavTab>('menu');
+  const [appMoreOpen, setAppMoreOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [adminLoginOpen, setAdminLoginOpen] = useState(false);
@@ -299,7 +303,7 @@ export default function App() {
             helplineNumber={settings.helplineNumber}
           />
 
-          <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 pb-16">
+          <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 pb-32 sm:pb-24">
             {/* High-Converting Hero Banner */}
             <HeroBanner
               onScrollToTiffin={scrollToTiffin}
@@ -405,28 +409,77 @@ export default function App() {
             </section>
           </main>
 
-          {/* Sticky Bottom Cart Bar for Mobile View */}
+          {/* Floating Mini Cart Pill sitting cleanly above Bottom Navigation Bar */}
           {cartCount > 0 && !cartOpen && (
-            <div className="fixed bottom-0 inset-x-0 p-3 z-30 sm:hidden bg-stone-900/90 backdrop-blur-md border-t border-stone-800">
+            <aside 
+              aria-label="Active cart summary"
+              className="fixed bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px)+8px)] inset-x-3 sm:inset-x-auto sm:right-6 sm:w-96 z-40 animate-in slide-in-from-bottom-4 duration-200"
+            >
               <button
-                onClick={() => setCartOpen(true)}
-                className="w-full bg-linear-to-r from-orange-600 to-amber-600 text-white font-bold py-3 px-4 rounded-2xl flex items-center justify-between shadow-lg active:scale-98"
+                onClick={() => {
+                  setActiveNavTab('cart');
+                  setCartOpen(true);
+                }}
+                id="floating-cart-pill-btn"
+                className="w-full bg-linear-to-r from-orange-600 via-orange-500 to-amber-600 text-white font-bold py-3 px-4 rounded-2xl flex items-center justify-between shadow-xl shadow-orange-950/20 active:scale-98 border border-orange-400/30 backdrop-blur-md cursor-pointer"
               >
-                <div className="flex items-center gap-2">
-                  <span className="bg-white text-orange-600 text-xs font-black w-6 h-6 rounded-full flex items-center justify-center">
+                <div className="flex items-center gap-2.5">
+                  <span className="bg-white text-orange-600 text-xs font-black w-6 h-6 rounded-full flex items-center justify-center shadow-xs">
                     {cartCount}
                   </span>
-                  <span className="text-xs font-semibold">View Special Cart</span>
+                  <div className="text-left">
+                    <div className="text-xs font-black tracking-tight flex items-center gap-1.5">
+                      <span>₹{cart.reduce((a, b) => a + b.price * b.quantity, 0)}</span>
+                      <span className="text-[10px] text-orange-100 font-normal">| {cartCount} {cartCount === 1 ? 'item' : 'items'}</span>
+                    </div>
+                    <div className="text-[10px] text-orange-100/90 font-medium leading-none">
+                      Tap to review &amp; place order
+                    </div>
+                  </div>
                 </div>
-                <div className="text-sm font-black">
-                  ₹{cart.reduce((a, b) => a + b.price * b.quantity, 0)} →
+                <div className="flex items-center gap-1 bg-white/20 hover:bg-white/30 text-white text-xs font-black px-3 py-1.5 rounded-xl uppercase tracking-wider transition-colors">
+                  <span>View Cart</span>
+                  <span className="text-sm">→</span>
                 </div>
               </button>
-            </div>
+            </aside>
           )}
 
+          {/* Native App-Style Bottom Navigation Bar (Optimized for Median Web-to-App) */}
+          <BottomNavBar
+            activeTab={activeNavTab}
+            onSelectTab={setActiveNavTab}
+            cartCount={cartCount}
+            cartTotal={cart.reduce((a, b) => a + b.price * b.quantity, 0)}
+            activeOrder={activeOrder}
+            onOpenCart={() => {
+              setActiveNavTab('cart');
+              setCartOpen(true);
+            }}
+            onOpenOrders={() => {
+              setActiveNavTab('orders');
+              if (activeOrder) {
+                setOrderSuccessModalOpen(true);
+              } else {
+                setCustomerOrderHistoryOpen(true);
+              }
+            }}
+            onOpenMore={() => {
+              setActiveNavTab('more');
+              setAppMoreOpen(true);
+            }}
+            onScrollToMenu={() => {
+              setActiveNavTab('menu');
+              scrollToMenu();
+            }}
+            onScrollToTiffin={() => {
+              setActiveNavTab('tiffin');
+              scrollToTiffin();
+            }}
+          />
+
           {/* Footer with Helpline Details */}
-          <footer className="bg-stone-900 text-white mt-12 border-t border-stone-800">
+          <footer className="bg-stone-900 text-white mt-12 border-t border-stone-800 pb-20 sm:pb-12">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div>
@@ -582,6 +635,25 @@ export default function App() {
         validPassword={settings.adminPassword}
         helplineName={settings.contactPersonName}
         helplineNumber={settings.helplineNumber}
+      />
+
+      {/* App More / Support / Admin Sheet */}
+      <AppMoreModal
+        isOpen={appMoreOpen}
+        onClose={() => {
+          setAppMoreOpen(false);
+          setActiveNavTab('menu');
+        }}
+        settings={settings}
+        onOpenAdmin={() => {
+          if (isAdminAuthenticated) {
+            setIsAdminView(true);
+          } else {
+            setAdminLoginOpen(true);
+          }
+        }}
+        onOpenOrderHistory={() => setCustomerOrderHistoryOpen(true)}
+        areas={settings.areas}
       />
     </div>
   );
