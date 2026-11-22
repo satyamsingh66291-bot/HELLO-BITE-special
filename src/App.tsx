@@ -38,11 +38,9 @@ import { BottomNavBar, AppNavTab } from './components/BottomNavBar';
 import { AppMoreModal } from './components/AppMoreModal';
 import { PolicyModal, PolicyTab } from './components/PolicyModal';
 import { AuthFlowModal } from './components/auth/AuthFlowModal';
-import { RideBookingModal } from './components/RideBookingModal';
 import { ItemCustomizeModal } from './components/ItemCustomizeModal';
 import { GPSLocationModal } from './components/GPSLocationModal';
 import { StickyCartBar } from './components/StickyCartBar';
-import roleRideImg from './assets/images/role_ride_car_1794635220244.jpg';
 import roleFoodImg from './assets/images/role_food_bowl_1794635221244.jpg';
 import roleRestaurantImg from './assets/images/role_restaurant_store_1794635222037.jpg';
 import welcomeFeastImg from './assets/images/hellobite_welcome_feast_1794635220422.jpg';
@@ -60,7 +58,6 @@ import {
   Flame,
   Search,
   Bike,
-  Car,
   Store,
   Star,
   Check,
@@ -79,9 +76,13 @@ export default function App() {
   const [settings, setSettings] = useState<AdminSettings>(storeService.getSettings());
   const tiffinPlans = useMemo(() => storeService.getTiffinPlans(), []);
 
-  // WhatsApp Authenticated User
+  // Authenticated User
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => storeService.getCurrentUser());
   const [whatsAppAuthModalOpen, setWhatsAppAuthModalOpen] = useState(false);
+  const authModalOpenRef = useRef(false);
+  useEffect(() => {
+    authModalOpenRef.current = whatsAppAuthModalOpen;
+  }, [whatsAppAuthModalOpen]);
 
   // Favorites
   const [favorites, setFavorites] = useState<string[]>(() => storeService.getFavorites());
@@ -156,7 +157,6 @@ export default function App() {
   const [isRiderAuthenticated, setIsRiderAuthenticated] = useState(false);
   const [isRestaurantView, setIsRestaurantView] = useState(false);
   const [isKitchenAuthenticated, setIsKitchenAuthenticated] = useState(false);
-  const [rideModalOpen, setRideModalOpen] = useState(false);
   const [restaurants, setRestaurants] = useState<RestaurantRecord[]>(() => storeService.getRestaurants());
   const [loginMode, setLoginMode] = useState<'admin' | 'rider' | 'kitchen'>('admin');
   const [customerOrderHistoryOpen, setCustomerOrderHistoryOpen] = useState(false);
@@ -217,7 +217,7 @@ export default function App() {
     const unsubRestaurants = storeService.subscribeRestaurants((r) => setRestaurants(r));
 
     const unsubFirebaseAuth = subscribeFirebaseAuthState((fbUser) => {
-      if (fbUser) {
+      if (fbUser && !authModalOpenRef.current) {
         const cached = storeService.getCurrentUser();
         if (!cached || (cached.uid !== fbUser.uid && cached.id !== fbUser.uid && cached.email !== fbUser.email)) {
           storeService.saveUserProfile({
@@ -689,32 +689,6 @@ export default function App() {
               </div>
             </section>
 
-            {/* Ride at Your Fingertips Super-App Banner Card (Screen 4) */}
-            <div className="mt-4 bg-linear-to-r from-white via-[#FFF8F0] to-[#FFEDD5] rounded-3xl p-4 sm:p-5 border border-orange-200/80 shadow-sm flex items-center justify-between gap-4">
-              <div className="space-y-1.5">
-                <h3 className="font-display font-black text-lg sm:text-xl text-[#3D1C0A] leading-tight">
-                  Ride at Your Fingertips
-                </h3>
-                <p className="text-xs text-[#7C4A22] max-w-md">
-                  Book Bike Taxis, Autos &amp; Mini Cabs across Gopalganj &amp; Siwan in 3 minutes.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setRideModalOpen(true)}
-                  id="home-book-ride-btn"
-                  className="mt-1 bg-linear-to-r from-[#FF6B00] to-[#F59E0B] hover:brightness-105 text-white font-black text-xs px-4 py-2 rounded-xl inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  <span>Book Ride</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-              <img
-                src={roleRideImg}
-                alt="Hello Bite Ride Booking"
-                className="w-28 h-20 sm:w-36 sm:h-24 rounded-2xl object-cover shrink-0 border border-orange-200 shadow-xs"
-              />
-            </div>
-
             {/* Screen 4: Top Restaurants Showcase (Local Gopalganj & Siwan Kitchens + Approved Partners) */}
             <section className="mt-5">
               <div className="flex items-center justify-between mb-3">
@@ -938,7 +912,6 @@ export default function App() {
                 setCustomerOrderHistoryOpen(true);
               }
             }}
-            onOpenRide={() => setRideModalOpen(true)}
             onOpenMore={() => setAppMoreOpen(true)}
             onScrollToHome={() => {
               setActiveNavTab('home');
@@ -1110,15 +1083,6 @@ export default function App() {
         }}
       />
 
-      {/* Quick Ride Booking Super-App Modal */}
-      <RideBookingModal
-        isOpen={rideModalOpen}
-        onClose={() => setRideModalOpen(false)}
-        currentUser={currentUser}
-        pickupLabel={userAddressLabel}
-        onRequireAuth={() => setWhatsAppAuthModalOpen(true)}
-      />
-
       {/* Item Customization & Modifier Modal */}
       <ItemCustomizeModal
         isOpen={itemCustomizeModalOpen}
@@ -1131,7 +1095,10 @@ export default function App() {
       <OrderSuccessModal
         isOpen={orderSuccessModalOpen}
         order={activeOrder}
-        onClose={() => setOrderSuccessModalOpen(false)}
+        onClose={() => {
+          setOrderSuccessModalOpen(false);
+          setActiveNavTab('home');
+        }}
         onDismissActiveOrder={() => {
           storeService.clearActiveCustomerOrder();
           setActiveOrder(null);
@@ -1146,7 +1113,10 @@ export default function App() {
       {/* Past Orders History Modal */}
       <CustomerOrderHistoryModal
         isOpen={customerOrderHistoryOpen}
-        onClose={() => setCustomerOrderHistoryOpen(false)}
+        onClose={() => {
+          setCustomerOrderHistoryOpen(false);
+          setActiveNavTab('home');
+        }}
         orders={orders}
         onTrackOrder={(ord) => {
           setActiveOrder(ord);
@@ -1190,10 +1160,13 @@ export default function App() {
         helplineNumber={settings.helplineNumber}
       />
 
-      {/* Profile, Policies & Helpline Bottom Sheet */}
+      {/* Profile, Policies & Helpline Full-Screen View */}
       <AppMoreModal
         isOpen={appMoreOpen}
-        onClose={() => setAppMoreOpen(false)}
+        onClose={() => {
+          setAppMoreOpen(false);
+          setActiveNavTab('home');
+        }}
         settings={settings}
         currentUser={currentUser}
         currentAddressLabel={userAddressLabel}

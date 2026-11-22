@@ -11,8 +11,7 @@ import {
   RiderRecord,
   RestaurantRecord,
   ApprovalStatus,
-  UserRole,
-  RideBooking
+  UserRole
 } from '../types';
 import { INITIAL_DISHES, INITIAL_TIFFIN_PLANS, INITIAL_SETTINGS } from '../data/initialData';
 import { 
@@ -40,8 +39,7 @@ const STORAGE_KEYS = {
   FAVORITES: 'hellobite_favorites_v1',
   RIDER_PROFILE: 'hellobite_rider_profile_v1',
   RIDERS: 'hellobite_riders_v1',
-  RESTAURANTS: 'hellobite_restaurants_v1',
-  RIDES: 'hellobite_rides_v1'
+  RESTAURANTS: 'hellobite_restaurants_v1'
 };
 
 // Sanitize objects for Firestore to prevent undefined field errors
@@ -73,7 +71,6 @@ class StoreService {
   private favoriteListeners: Array<(favIds: string[]) => void> = [];
   private riderListeners: Array<(riders: RiderRecord[]) => void> = [];
   private restaurantListeners: Array<(restaurants: RestaurantRecord[]) => void> = [];
-  private rideListeners: Array<(rides: RideBooking[]) => void> = [];
   private isConnectedToFirestore = false;
   private knownOrderIds = new Set<string>();
 
@@ -99,8 +96,6 @@ class StoreService {
           this.notifyRiderListeners();
         } else if (type === 'RESTAURANTS_CHANGED') {
           this.notifyRestaurantListeners();
-        } else if (type === 'RIDES_CHANGED') {
-          this.notifyRideListeners();
         }
       };
     }
@@ -1048,32 +1043,6 @@ class StoreService {
     updateDoc(doc(db, 'restaurants', restaurantId), { isOpen, updatedAt: Date.now() }).catch(console.warn);
   }
 
-  // --- RIDE BOOKINGS ---
-  public getRides(): RideBooking[] {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.RIDES);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // fallback
-    }
-    return [];
-  }
-
-  public saveRideBooking(data: Omit<RideBooking, 'id' | 'rideNumber' | 'createdAt' | 'status'>): RideBooking {
-    const ride: RideBooking = {
-      ...data,
-      id: 'ride_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      rideNumber: 'HB-' + Math.floor(1000 + Math.random() * 9000),
-      status: 'Searching Rider',
-      createdAt: Date.now(),
-    };
-    const updated = [ride, ...this.getRides()];
-    localStorage.setItem(STORAGE_KEYS.RIDES, JSON.stringify(updated));
-    this.broadcastMessage('RIDES_CHANGED', ride);
-    this.notifyRideListeners();
-    return ride;
-  }
-
   // --- SUBSCRIPTIONS ---
   public subscribeOrders(cb: (orders: Order[]) => void): () => void {
     this.orderListeners.push(cb);
@@ -1146,14 +1115,6 @@ class StoreService {
     };
   }
 
-  public subscribeRides(cb: (rides: RideBooking[]) => void): () => void {
-    this.rideListeners.push(cb);
-    cb(this.getRides());
-    return () => {
-      this.rideListeners = this.rideListeners.filter(l => l !== cb);
-    };
-  }
-
   private broadcastMessage(type: string, payload: unknown) {
     if (this.broadcastChannel) {
       this.broadcastChannel.postMessage({ type, payload });
@@ -1197,11 +1158,6 @@ class StoreService {
   private notifyRestaurantListeners() {
     const restaurants = this.getRestaurants();
     this.restaurantListeners.forEach(cb => cb(restaurants));
-  }
-
-  private notifyRideListeners() {
-    const rides = this.getRides();
-    this.rideListeners.forEach(cb => cb(rides));
   }
 }
 

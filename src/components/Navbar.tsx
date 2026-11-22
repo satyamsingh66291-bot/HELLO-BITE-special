@@ -161,11 +161,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {activeOrder && (
             <button
+              type="button"
               onClick={onOpenOrderTracker}
               id="nav-active-tracker-btn"
               className="hidden lg:flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-2xl text-xs font-extrabold hover:bg-emerald-100 transition-colors cursor-pointer"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+              <span className="w-2 h-2 rounded-full bg-emerald-600" />
               <span>Track #{activeOrder.orderNumber}</span>
             </button>
           )}

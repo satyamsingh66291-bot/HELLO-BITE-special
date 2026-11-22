@@ -13,6 +13,8 @@ import {
   browserLocalPersistence,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithCustomToken,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -43,6 +45,7 @@ export const firestoreDbId =
 export const auth: Auth = getAuth(firebaseApp);
 
 if (typeof window !== 'undefined') {
+  auth.useDeviceLanguage();
   setPersistence(auth, browserLocalPersistence).catch((err) => {
     console.warn('Firebase Auth persistence notice:', err);
   });
@@ -118,12 +121,124 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-export async function signInWithGooglePopup(): Promise<UserCredential> {
+function createGoogleProvider(): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
   provider.addScope('email');
   provider.addScope('profile');
   provider.setCustomParameters({ prompt: 'select_account' });
+  return provider;
+}
+
+export async function signInWithGooglePopup(): Promise<UserCredential> {
+  const provider = createGoogleProvider();
   return signInWithPopup(auth, provider);
+}
+
+export async function signInWithGoogleRedirect(): Promise<void> {
+  const provider = createGoogleProvider();
+  await signInWithRedirect(auth, provider);
+}
+
+export async function consumeGoogleRedirectResult(): Promise<UserCredential | null> {
+  try {
+    return await getRedirectResult(auth);
+  } catch (err) {
+    console.warn('Google redirect result notice:', err);
+    return null;
+  }
+}
+
+export function formatGoogleAuthError(err: unknown): {
+  code: string;
+  message: string;
+  canOfferRedirect: boolean;
+} {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code || '')
+      : '';
+  const rawMessage = err instanceof Error ? err.message : String(err || '');
+
+  if (code === 'auth/popup-blocked' || rawMessage.includes('popup-blocked')) {
+    return {
+      code: 'auth/popup-blocked',
+      message:
+        'Your browser blocked the Google sign-in window. Allow popups for this site and tap Retry, or use browser redirect sign-in below.',
+      canOfferRedirect: true,
+    };
+  }
+  if (
+    code === 'auth/popup-closed-by-user' ||
+    rawMessage.includes('popup-closed-by-user')
+  ) {
+    return {
+      code: 'auth/popup-closed-by-user',
+      message:
+        'Google sign-in window was closed before completing login. Tap Retry Google Sign-In to try again.',
+      canOfferRedirect: false,
+    };
+  }
+  if (
+    code === 'auth/cancelled-popup-request' ||
+    rawMessage.includes('cancelled-popup-request')
+  ) {
+    return {
+      code: 'auth/cancelled-popup-request',
+      message:
+        'Previous Google sign-in attempt was interrupted. Tap Retry Google Sign-In below.',
+      canOfferRedirect: true,
+    };
+  }
+  if (
+    code === 'auth/unauthorized-domain' ||
+    rawMessage.includes('unauthorized-domain')
+  ) {
+    const host =
+      typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+    return {
+      code: 'auth/unauthorized-domain',
+      message: `Domain "${host}" is not authorized in Firebase Auth settings yet. Tap Retry after domain authorization or try opening in a top-level browser tab.`,
+      canOfferRedirect: false,
+    };
+  }
+  if (
+    code === 'auth/network-request-failed' ||
+    rawMessage.includes('network-request-failed')
+  ) {
+    return {
+      code: 'auth/network-request-failed',
+      message:
+        'Network error reaching Google Authentication. Check your internet connection and tap Retry.',
+      canOfferRedirect: false,
+    };
+  }
+  if (
+    code === 'auth/operation-not-allowed' ||
+    rawMessage.includes('operation-not-allowed')
+  ) {
+    return {
+      code: 'auth/operation-not-allowed',
+      message:
+        'Google Sign-In provider needs to be enabled in Firebase Authentication. Tap Retry once active.',
+      canOfferRedirect: false,
+    };
+  }
+  if (code === 'auth/internal-error' || rawMessage.includes('internal-error')) {
+    return {
+      code: 'auth/internal-error',
+      message:
+        'Embedded browser frame restricted popup cookies. Allow third-party cookies/popups and tap Retry, or use browser redirect.',
+      canOfferRedirect: true,
+    };
+  }
+
+  return {
+    code: code || 'auth/unknown',
+    message:
+      rawMessage ||
+      'Unable to complete Google Sign-In right now. Please tap Retry.',
+    canOfferRedirect: true,
+  };
 }
 
 export async function signInWithGmailPassword(

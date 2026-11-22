@@ -49,7 +49,7 @@ export interface RiderRecord {
     profilePhotoUrl?: string;
   };
   vehicleDetails: {
-    vehicleType: 'Bike' | 'Scooter' | 'Cab';
+    vehicleType: 'Bike' | 'Scooter' | 'Bicycle';
     vehicleNumber: string;
     drivingLicenceNumber: string;
   };
@@ -94,21 +94,6 @@ export interface RestaurantRecord {
   prepTime: string;
   createdAt: number;
   updatedAt?: number;
-}
-
-export interface RideBooking {
-  id: string;
-  rideNumber: string;
-  userId: string;
-  customerName: string;
-  customerPhone: string;
-  vehicleType: 'Bike Taxi' | 'Auto' | 'Mini Cab';
-  pickup: string;
-  drop: string;
-  distanceKm: number;
-  fare: number;
-  status: 'Searching Rider' | 'Rider Assigned' | 'In Progress' | 'Completed' | 'Cancelled';
-  createdAt: number;
 }
 
 export interface DynamicDeliveryFee {

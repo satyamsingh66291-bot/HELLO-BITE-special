@@ -182,7 +182,7 @@ async function sendViaTwilioWhatsApp(
     params.set('To', `whatsapp:${e164}`);
     params.set(
       'Body',
-      `HELLO BITE OTP: ${otp}. Valid for 5 minutes. Welcome to Food Delivery & Rides.`
+      `HELLO BITE OTP: ${otp}. Valid for 5 minutes. Welcome to Food Delivery & Tiffins.`
     );
 
     const basicAuth = Buffer.from(`${sid}:${authToken}`).toString('base64');

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  X,
+  ArrowLeft,
   MapPin,
   Navigation,
   CheckCircle2,
@@ -9,8 +9,8 @@ import {
   Search,
   Store,
   Crosshair,
+  X,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 import {
   APIProvider,
   Map as GoogleMap,
@@ -84,6 +84,8 @@ interface InteractiveMapStageProps {
   onSelectPosition: (coords: GeoCoordinates, label?: string) => void;
   onDetectGps: () => void;
   detectingGps: boolean;
+  manualAddress: string;
+  onManualAddressChange: (addr: string) => void;
 }
 
 const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
@@ -94,6 +96,8 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
   onSelectPosition,
   onDetectGps,
   detectingGps,
+  manualAddress,
+  onManualAddressChange,
 }) => {
   const map = useMap();
   const placesLib = useMapsLibrary('places');
@@ -102,14 +106,14 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
   const [searchingPlaces, setSearchingPlaces] = useState(false);
   const sessionTokenRef = useRef<unknown>(null);
 
-  // Recenter map smoothly when coordinates change
+  // Recenter map cleanly whenever pinned coordinates update
   useEffect(() => {
     if (map) {
       map.panTo({ lat: selectedCoords.latitude, lng: selectedCoords.longitude });
     }
   }, [map, selectedCoords.latitude, selectedCoords.longitude]);
 
-  // Places Autocomplete (New API: AutocompleteSuggestion + AutocompleteSessionToken)
+  // Places Autocomplete (New Places API: AutocompleteSuggestion + AutocompleteSessionToken)
   useEffect(() => {
     if (!placesLib || !searchQuery.trim() || searchQuery.trim().length < 2) {
       setSuggestions([]);
@@ -189,53 +193,91 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
 
   if (status === APILoadingStatus.FAILED || status === APILoadingStatus.AUTH_FAILURE) {
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 flex items-start gap-2.5">
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-        <div>
-          <strong className="block font-bold">
-            Interactive Map Preview Temporarily Unavailable
-          </strong>
-          <span className="text-[11px] text-amber-800">
-            GPS detection and live per-km distance pricing remain active below.
-          </span>
+      <div className="space-y-3">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-950 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="block font-bold">
+                Google Map Tiles Unavailable
+              </strong>
+              <span className="text-[11px] text-amber-800">
+                Live GPS detection and road-distance pricing remain active below.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onDetectGps}
+            className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-950 font-bold text-xs shrink-0 cursor-pointer"
+          >
+            Use GPS
+          </button>
+        </div>
+
+        <div className="bg-white border border-[#F5E6D3] rounded-2xl p-3.5">
+          <label className="block text-[11px] font-bold text-[#7C4A22] uppercase mb-1.5">
+            Delivery Street / Locality Address
+          </label>
+          <input
+            type="text"
+            value={manualAddress}
+            onChange={(e) => onManualAddressChange(e.target.value)}
+            placeholder="Enter full street, mohalla, or area"
+            className="w-full min-h-[44px] bg-[#FFF8F0] border border-orange-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold text-[#3D1C0A] focus:outline-none focus:border-[#FF6B00]"
+          />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2.5">
-      {/* Places Search Bar */}
-      <div className="relative">
-        <Search className="w-4 h-4 text-[#FF6B00] absolute left-3.5 top-3 pointer-events-none" />
+    <div className="space-y-3">
+      {/* Places Autocomplete Search Bar */}
+      <div className="relative z-20">
+        <Search className="w-4 h-4 text-[#FF6B00] absolute left-3.5 top-3.5 pointer-events-none" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search street, market, or landmark on Google Maps..."
           id="gps-places-search-input"
-          className="w-full bg-stone-50 border border-orange-200 rounded-2xl pl-10 pr-9 py-2.5 text-xs font-semibold text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-[#FF6B00] focus:bg-white transition-all"
+          className="w-full min-h-[46px] bg-white border border-orange-200 rounded-2xl pl-10 pr-10 py-2.5 text-xs sm:text-sm font-semibold text-[#3D1C0A] placeholder:text-[#7C4A22]/60 shadow-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-[#FF6B00] transition-all"
         />
-        {searchingPlaces && (
-          <RefreshCw className="w-3.5 h-3.5 text-[#FF6B00] animate-spin absolute right-3 top-3" />
+        {searchingPlaces ? (
+          <RefreshCw className="w-4 h-4 text-[#FF6B00] animate-spin absolute right-3.5 top-3.5" />
+        ) : (
+          searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                onSearchQueryChange('');
+                setSuggestions([]);
+              }}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-2.5 p-1 text-stone-400 hover:text-[#3D1C0A] cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )
         )}
 
         {suggestions.length > 0 && (
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-2xl border border-orange-200 shadow-xl z-30 divide-y divide-stone-100 overflow-hidden">
+          <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-orange-200 shadow-xl z-30 divide-y divide-[#F5E6D3] overflow-hidden">
             {suggestions.map((item) => (
               <button
                 key={item.placeId}
                 type="button"
                 onClick={() => handleChooseSuggestion(item)}
-                className="w-full px-3.5 py-2.5 text-left hover:bg-orange-50 flex items-start gap-2.5 transition-colors cursor-pointer"
+                className="w-full min-h-[48px] px-4 py-2.5 text-left hover:bg-[#FFF8F0] flex items-start gap-2.5 transition-colors cursor-pointer"
               >
                 <MapPin className="w-4 h-4 text-[#FF6B00] shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-stone-900 truncate">
+                  <div className="text-xs sm:text-sm font-bold text-[#3D1C0A] truncate">
                     {item.mainText}
                   </div>
                   {item.secondaryText && (
-                    <div className="text-[10px] text-stone-500 truncate">
+                    <div className="text-[11px] text-[#7C4A22] truncate">
                       {item.secondaryText}
                     </div>
                   )}
@@ -246,8 +288,15 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
         )}
       </div>
 
-      {/* Google Map Canvas */}
-      <div className="relative h-56 sm:h-64 w-full rounded-2xl overflow-hidden border border-orange-200 shadow-sm bg-stone-100">
+      {/* Explicit-Height Full-Screen Google Map Canvas */}
+      <div className="relative h-[42vh] min-h-[300px] sm:h-[46vh] w-full rounded-3xl overflow-hidden border border-orange-200 shadow-sm bg-[#F9EFE6]">
+        {status === APILoadingStatus.LOADING || status === APILoadingStatus.NOT_LOADED ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#FFF8F0] text-[#7C4A22] gap-2 z-10">
+            <RefreshCw className="w-6 h-6 text-[#FF6B00] animate-spin" />
+            <span className="text-xs font-bold">Loading Google Maps...</span>
+          </div>
+        ) : null}
+
         <GoogleMap
           mapId="DEMO_MAP_ID"
           internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
@@ -263,7 +312,7 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
             }
           }}
         >
-          {/* Kitchen Hub Marker */}
+          {/* Kitchen Hub Origin Pin */}
           <AdvancedMarker
             position={{ lat: kitchenHub.lat, lng: kitchenHub.lng }}
             title={kitchenHub.name || 'Hello Bite Kitchen Hub'}
@@ -277,7 +326,7 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
           <AdvancedMarker
             position={{ lat: selectedCoords.latitude, lng: selectedCoords.longitude }}
             draggable={true}
-            title="Delivery Pin (Drag to adjust)"
+            title="Delivery Pin (Drag or tap map to adjust)"
             onDragEnd={(ev) => {
               const ll = ev.latLng;
               if (ll) {
@@ -285,7 +334,7 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
               }
             }}
           >
-            <Pin background="#FF6B00" borderColor="#FFFFFF" glyphColor="#FFFFFF" scale={1.15} />
+            <Pin background="#FF6B00" borderColor="#FFFFFF" glyphColor="#FFFFFF" scale={1.2} />
           </AdvancedMarker>
         </GoogleMap>
 
@@ -294,14 +343,15 @@ const InteractiveMapStage: React.FC<InteractiveMapStageProps> = ({
           type="button"
           onClick={onDetectGps}
           disabled={detectingGps}
-          title="Use my live GPS position"
-          className="absolute bottom-3 left-3 bg-white hover:bg-orange-50 text-[#3D1C0A] text-[11px] font-extrabold px-2.5 py-1.5 rounded-xl shadow-md border border-orange-200 flex items-center gap-1.5 cursor-pointer"
+          id="map-floating-gps-btn"
+          title="Detect my current GPS location"
+          className="min-h-[44px] absolute bottom-3 left-3 bg-white hover:bg-orange-50 text-[#3D1C0A] text-xs font-extrabold px-3.5 py-2 rounded-2xl shadow-lg border border-orange-200 flex items-center gap-1.5 cursor-pointer"
         >
-          <Crosshair className={`w-3.5 h-3.5 text-[#FF6B00] ${detectingGps ? 'animate-spin' : ''}`} />
-          <span>My GPS</span>
+          <Crosshair className={`w-4 h-4 text-[#FF6B00] ${detectingGps ? 'animate-spin' : ''}`} />
+          <span>{detectingGps ? 'Locating...' : 'My GPS'}</span>
         </button>
 
-        <div className="absolute top-2.5 left-2.5 bg-white/95 backdrop-blur-xs text-[10px] font-bold text-[#3D1C0A] px-2.5 py-1 rounded-lg border border-orange-100 shadow-xs pointer-events-none">
+        <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-xs text-[11px] font-bold text-[#3D1C0A] px-3 py-1 rounded-xl border border-orange-100 shadow-xs pointer-events-none">
           Tap map or drag orange pin
         </div>
       </div>
@@ -321,7 +371,7 @@ export const GPSLocationModal: React.FC<GPSLocationModalProps> = ({
   onLocationDetected,
   onLocationConfirmed,
 }) => {
-  const { apiKey } = useGoogleMapsApiKey();
+  const { apiKey, loading: apiKeyLoading } = useGoogleMapsApiKey();
   const [loading, setLoading] = useState(false);
   const [resolvingAddress, setResolvingAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -333,6 +383,15 @@ export const GPSLocationModal: React.FC<GPSLocationModalProps> = ({
   const [landmark, setLandmark] = useState('');
   const [manualAddress, setManualAddress] = useState(currentAddressLabel);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   const resolveCoordsMetadata = useCallback(
     async (coords: GeoCoordinates, explicitLabel?: string) => {
@@ -441,6 +500,8 @@ export const GPSLocationModal: React.FC<GPSLocationModalProps> = ({
     }
   }, [isOpen, autoDetectOnOpen]);
 
+  if (!isOpen) return null;
+
   const currentPricing = calculateDynamicDeliveryPricing(
     selectedCoords,
     baseDeliveryFee,
@@ -489,199 +550,174 @@ export const GPSLocationModal: React.FC<GPSLocationModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/65 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
+    <div
+      id="delivery-location-fullscreen-view"
+      className="fixed inset-0 z-50 w-full h-full bg-[#FFF8F0] flex flex-col animate-in fade-in duration-150"
+    >
+      {/* Sticky Full-Screen Top Header */}
+      <header className="h-14 shrink-0 bg-white/95 backdrop-blur-md border-b border-[#F5E6D3] px-3 sm:px-6 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          id="gps-location-back-btn"
+          className="min-h-[44px] min-w-[44px] -ml-1 px-2 rounded-xl hover:bg-orange-50 text-[#3D1C0A] flex items-center gap-1.5 font-bold text-sm cursor-pointer transition-colors"
+          aria-label="Back"
         >
-          <motion.div
-            initial={{ y: '100%', opacity: 0.9 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: '100%', opacity: 0.9 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-            className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border-t sm:border border-stone-200 max-h-[94vh] flex flex-col pb-[env(safe-area-inset-bottom,0px)]"
-            onClick={(e) => e.stopPropagation()}
+          <ArrowLeft className="w-5 h-5 text-[#FF6B00]" />
+          <span className="hidden sm:inline">Back</span>
+        </button>
+
+        <h2 className="font-display font-black text-base sm:text-lg text-[#3D1C0A] tracking-tight truncate">
+          Pin Delivery Location
+        </h2>
+
+        <button
+          type="button"
+          onClick={handleDetectGPS}
+          disabled={loading}
+          id="btn-detect-gps-location"
+          className="min-h-[40px] px-3 py-1.5 rounded-xl bg-linear-to-r from-[#FF6B00] to-[#F59E0B] hover:brightness-105 text-white font-extrabold text-xs flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+        >
+          {loading ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Navigation className="w-3.5 h-3.5 fill-white" />
+          )}
+          <span>{loading ? 'Locating' : 'Detect GPS'}</span>
+        </button>
+      </header>
+
+      {/* Scrollable Body */}
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+        <div className="max-w-3xl mx-auto space-y-4">
+          {error && (
+            <div className="bg-red-50 text-red-700 p-3.5 rounded-2xl border border-red-200 text-xs flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Interactive Google Map Stage or Loading State */}
+          {apiKeyLoading ? (
+            <div className="h-[42vh] min-h-[300px] sm:h-[46vh] w-full rounded-3xl border border-[#F5E6D3] bg-white flex flex-col items-center justify-center gap-2.5 text-[#7C4A22]">
+              <RefreshCw className="w-6 h-6 text-[#FF6B00] animate-spin" />
+              <span className="text-xs font-bold">Connecting to Google Maps...</span>
+            </div>
+          ) : apiKey ? (
+            <APIProvider apiKey={apiKey} language="en" region="IN">
+              <InteractiveMapStage
+                selectedCoords={selectedCoords}
+                kitchenHub={kitchenHub}
+                searchQuery={searchQuery}
+                onSearchQueryChange={setSearchQuery}
+                onSelectPosition={handleSelectPosition}
+                onDetectGps={handleDetectGPS}
+                detectingGps={loading}
+                manualAddress={manualAddress}
+                onManualAddressChange={setManualAddress}
+              />
+            </APIProvider>
+          ) : (
+            <div className="bg-white border border-[#F5E6D3] rounded-3xl p-4 text-xs text-[#3D1C0A] space-y-2">
+              <label className="block text-[11px] font-bold text-[#7C4A22] uppercase">
+                Street / Area Address
+              </label>
+              <input
+                type="text"
+                value={manualAddress}
+                onChange={(e) => setManualAddress(e.target.value)}
+                placeholder="Enter street address or tap Detect GPS"
+                className="w-full min-h-[44px] bg-[#FFF8F0] border border-orange-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-[#3D1C0A] focus:outline-none focus:border-[#FF6B00]"
+              />
+            </div>
+          )}
+
+          {/* Active Coordinates & Live Per-KM Fee Breakdown */}
+          <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#F5E6D3] shadow-xs space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-orange-700 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  {currentPricing.isServiceable
+                    ? 'Serviceable Kitchen Route'
+                    : 'Outside Delivery Radius'}
+                </span>
+                <h4 className="font-display font-black text-[#3D1C0A] text-sm sm:text-base mt-1 break-words">
+                  {resolvingAddress
+                    ? 'Resolving street address...'
+                    : manualAddress || currentLocality.fullLabel}
+                </h4>
+                <p className="text-xs text-[#7C4A22] mt-0.5">
+                  Kitchen Hub: <strong className="text-[#3D1C0A]">{currentPricing.nearestHubName}</strong>
+                </p>
+              </div>
+
+              <div className="text-right shrink-0">
+                <span className="text-xs font-extrabold text-[#FF6B00] bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-xl tabular-nums inline-block">
+                  {currentPricing.distanceKm} km {roadDistanceKm !== null ? 'road' : ''}
+                </span>
+                <p className="text-[11px] text-[#7C4A22] font-semibold mt-1">
+                  ETA: {currentPricing.estimatedMinutes}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2.5 border-t border-[#F5E6D3] flex items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-[#7C4A22] font-semibold">Per-KM Delivery Charge:</span>
+              <span className="font-black text-[#3D1C0A] text-base tabular-nums text-right">
+                ₹{currentPricing.calculatedFee}{' '}
+                <span className="text-[11px] font-medium text-[#7C4A22] block sm:inline">
+                  ({currentPricing.displayBreakdown})
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {/* Flat / Landmark Details */}
+          <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#F5E6D3] shadow-xs grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className="block text-[11px] font-extrabold text-[#7C4A22] uppercase mb-1.5">
+                Flat / House No. / Floor
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. House 42, 2nd Floor"
+                value={flatNumber}
+                onChange={(e) => setFlatNumber(e.target.value)}
+                className="w-full min-h-[44px] bg-[#FFF8F0] border border-[#F5E6D3] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-[#3D1C0A] focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-[#FF6B00] focus:bg-white transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-extrabold text-[#7C4A22] uppercase mb-1.5">
+                Nearby Landmark
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Near Bus Stand"
+                value={landmark}
+                onChange={(e) => setLandmark(e.target.value)}
+                className="w-full min-h-[44px] bg-[#FFF8F0] border border-[#F5E6D3] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-[#3D1C0A] focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-[#FF6B00] focus:bg-white transition-all"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky Full-Width Confirm Footer */}
+      <div className="shrink-0 bg-white border-t border-[#F5E6D3] px-4 sm:px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+        <div className="max-w-3xl mx-auto">
+          <button
+            type="button"
+            onClick={handleConfirmLocation}
+            id="btn-confirm-gps-location"
+            className="w-full min-h-[48px] bg-linear-to-r from-[#FF6B00] to-[#F59E0B] hover:brightness-105 text-white font-black text-sm sm:text-base py-3.5 px-5 rounded-2xl shadow-lg shadow-orange-500/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
           >
-            {/* Mobile Drag Handle */}
-            <div className="sm:hidden flex justify-center pt-2.5 pb-1 bg-stone-50">
-              <div className="w-10 h-1 rounded-full bg-stone-300" />
-            </div>
-
-            {/* Header */}
-            <div className="px-5 py-3.5 sm:p-5 border-b border-stone-100 flex items-center justify-between bg-stone-50 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 bg-orange-100 text-orange-600 rounded-2xl">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-display font-bold text-base text-stone-900">
-                    Pin Delivery Location
-                  </h3>
-                  <p className="text-[11px] text-stone-500">
-                    Google Maps GPS &amp; live per-km kitchen distance fee
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-200/60 rounded-xl transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto">
-              {/* Primary Action: Detect Current GPS */}
-              <button
-                type="button"
-                onClick={handleDetectGPS}
-                disabled={loading}
-                id="btn-detect-gps-location"
-                className="w-full bg-linear-to-r from-[#FF6B00] to-[#F59E0B] hover:brightness-105 active:scale-[0.98] text-white font-bold text-sm py-3 px-4 rounded-2xl shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {loading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Detecting current GPS location...</span>
-                  </>
-                ) : (
-                  <>
-                    <Navigation className="w-4 h-4 fill-white" />
-                    <span>Detect Current Location (GPS)</span>
-                  </>
-                )}
-              </button>
-
-              {error && (
-                <div className="bg-red-50 text-red-700 p-3 rounded-2xl border border-red-200 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {/* Interactive Google Map when API key is configured */}
-              {apiKey ? (
-                <APIProvider apiKey={apiKey} language="en" region="IN">
-                  <InteractiveMapStage
-                    selectedCoords={selectedCoords}
-                    kitchenHub={kitchenHub}
-                    searchQuery={searchQuery}
-                    onSearchQueryChange={setSearchQuery}
-                    onSelectPosition={handleSelectPosition}
-                    onDetectGps={handleDetectGPS}
-                    detectingGps={loading}
-                  />
-                </APIProvider>
-              ) : (
-                <div className="bg-orange-50/60 border border-orange-200 rounded-2xl p-3.5 text-xs text-stone-700">
-                  <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">
-                    Street / Area Address
-                  </label>
-                  <input
-                    type="text"
-                    value={manualAddress}
-                    onChange={(e) => setManualAddress(e.target.value)}
-                    placeholder="Enter street address or tap Detect Current Location"
-                    className="w-full bg-white border border-orange-200 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:border-[#FF6B00]"
-                  />
-                </div>
-              )}
-
-              {/* Active Coordinates & Dynamic Per-KM Fee Breakdown */}
-              <div className="bg-orange-50/70 rounded-2xl p-4 border border-orange-200 space-y-2.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-orange-700 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      {currentPricing.isServiceable
-                        ? 'Serviceable Kitchen Route'
-                        : 'Outside Delivery Radius'}
-                    </span>
-                    <h4 className="font-bold text-stone-900 text-xs sm:text-sm mt-0.5 break-words">
-                      {resolvingAddress
-                        ? 'Resolving street address...'
-                        : manualAddress || currentLocality.fullLabel}
-                    </h4>
-                    <p className="text-[11px] text-stone-500 mt-0.5">
-                      Kitchen: <strong>{currentPricing.nearestHubName}</strong>
-                    </p>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-lg tabular-nums">
-                      {currentPricing.distanceKm} km {roadDistanceKm !== null ? 'road' : ''}
-                    </span>
-                    <p className="text-[10px] text-stone-500 mt-1">
-                      ETA: {currentPricing.estimatedMinutes}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-orange-200/80 flex items-center justify-between gap-2 text-xs">
-                  <span className="text-stone-600">Delivery Charge:</span>
-                  <span className="font-extrabold text-stone-900 text-sm tabular-nums text-right">
-                    ₹{currentPricing.calculatedFee}{' '}
-                    <span className="text-[10px] font-normal text-stone-500 block sm:inline">
-                      ({currentPricing.displayBreakdown})
-                    </span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Flat / Landmark Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">
-                    Flat / House No. / Floor
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. House 42, 2nd Floor"
-                    value={flatNumber}
-                    onChange={(e) => setFlatNumber(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 focus:bg-white transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">
-                    Nearby Landmark
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Near Bus Stand"
-                    value={landmark}
-                    onChange={(e) => setLandmark(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 focus:bg-white transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Confirm Button */}
-              <button
-                type="button"
-                onClick={handleConfirmLocation}
-                id="btn-confirm-gps-location"
-                className="w-full bg-stone-900 hover:bg-[#FF6B00] text-white font-bold text-sm py-3.5 rounded-2xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm &amp; Set Delivery Location</span>
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+            <CheckCircle2 className="w-5 h-5" />
+            <span>Confirm &amp; Set Delivery Location · ₹{currentPricing.calculatedFee}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
