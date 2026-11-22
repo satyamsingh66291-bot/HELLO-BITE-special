@@ -1,10 +1,11 @@
 import { Dish, TiffinPlan, DeliveryArea, AdminSettings, Coupon } from '../types';
 
 export const INITIAL_AREAS: DeliveryArea[] = [
-  { id: 'area_1', name: 'Local Area (0-3 km)', charge: 20, estimatedTime: '20-25 mins' },
-  { id: 'area_2', name: 'Near Suburbs (3-7 km)', charge: 40, estimatedTime: '30-40 mins' },
-  { id: 'area_3', name: 'City Outskirts (7-12 km)', charge: 60, estimatedTime: '45-55 mins' },
-  { id: 'area_4', name: 'Highway Hub / Extended (12+ km)', charge: 80, estimatedTime: '55-65 mins' }
+  { id: 'area_gopalganj_city', name: 'Gopalganj Town & Main Market (0-5 km)', charge: 20, estimatedTime: '20-30 mins' },
+  { id: 'area_gopalganj_thawe', name: 'Thawe Road Corridor (5-12 km)', charge: 35, estimatedTime: '30-45 mins' },
+  { id: 'area_siwan_city', name: 'Siwan Town & Station Area (0-5 km)', charge: 25, estimatedTime: '20-35 mins' },
+  { id: 'area_siwan_outer', name: 'Mairwa Road Corridor (5-12 km)', charge: 40, estimatedTime: '35-50 mins' },
+  { id: 'area_highway_corridor', name: 'Gopalganj - Siwan Highway Corridor', charge: 50, estimatedTime: '40-55 mins' }
 ];
 
 export const INITIAL_COUPONS: Coupon[] = [
@@ -50,7 +51,7 @@ export const INITIAL_COUPONS: Coupon[] = [
 export const INITIAL_SETTINGS: AdminSettings = {
   contactPersonName: 'SATYAM SINGH',
   helplineNumber: '7091472879',
-  adminPassword: '9771264784',
+  adminPassword: '161600',
   enableAudioAlert: true,
   alertVolume: 0.85,
   whatsappNumber: '917091472879',
@@ -58,7 +59,12 @@ export const INITIAL_SETTINGS: AdminSettings = {
   telegramChatId: '',
   areas: INITIAL_AREAS,
   coupons: INITIAL_COUPONS,
-  useFirebaseCloud: false
+  useFirebaseCloud: false,
+  baseDeliveryFee: 20,
+  perKmRate: 8,
+  kitchenHubName: 'Gopalganj Central Kitchen',
+  kitchenHubLat: 26.4687,
+  kitchenHubLng: 84.4442
 };
 
 export const INITIAL_DISHES: Dish[] = [

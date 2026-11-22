@@ -2,7 +2,7 @@
   "entities": {
     "Dish": {
       "title": "Dish",
-      "description": "Menu dish or food item offered by Hello Bite",
+      "description": "Menu dish or food item offered on Hello Bite",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -19,13 +19,14 @@
         "reviewsCount": { "type": "number" },
         "isPopular": { "type": "boolean" },
         "preparationTime": { "type": "string" },
-        "spiceLevel": { "type": "string" }
+        "spiceLevel": { "type": "string" },
+        "restaurantId": { "type": "string" }
       },
       "required": ["id", "name", "price", "isVeg", "isAvailable"]
     },
     "Order": {
       "title": "Order",
-      "description": "Customer food delivery order or task request",
+      "description": "Customer food delivery order or ride request",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -41,34 +42,104 @@
         "paymentMethod": { "type": "string" },
         "paymentStatus": { "type": "string" },
         "status": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "createdAt": { "type": "number" }
       },
-      "required": ["id", "orderNumber", "customerName", "phone", "deliveryAddress", "total", "status", "createdAt"]
+      "required": ["id", "orderNumber", "customerName", "phone", "total", "status", "createdAt"]
     },
     "AdminSettings": {
       "title": "AdminSettings",
-      "description": "Global operational settings, helpline details, and coupons",
+      "description": "Global operational settings, per-km delivery rates, kitchen hub coordinates, helpline details, and coupons",
       "type": "object",
       "properties": {
         "contactPersonName": { "type": "string" },
         "helplineNumber": { "type": "string" },
-        "adminPassword": { "type": "string" }
+        "adminPassword": { "type": "string" },
+        "baseDeliveryFee": { "type": "number" },
+        "perKmRate": { "type": "number" },
+        "kitchenHubName": { "type": "string" },
+        "kitchenHubLat": { "type": "number" },
+        "kitchenHubLng": { "type": "number" }
       },
       "required": ["contactPersonName", "helplineNumber"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "Authenticated Hello Bite user account across customer, rider, and restaurant roles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "role": { "type": "string", "enum": ["Customer", "Rider", "Restaurant"] },
+        "profileImage": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "isVerified": { "type": "boolean" },
+        "accountStatus": { "type": "string", "enum": ["active", "pending", "suspended"] }
+      },
+      "required": ["uid", "phoneNumber", "name", "role", "isVerified", "accountStatus"]
+    },
+    "RiderRecord": {
+      "title": "RiderRecord",
+      "description": "Delivery & Ride partner profile, vehicle details, KYC documents, verification status, availability, and earnings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "personalDetails": { "type": "object" },
+        "vehicleDetails": { "type": "object" },
+        "documents": { "type": "object" },
+        "approvalStatus": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "availability": { "type": "boolean" },
+        "earnings": { "type": "object" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "personalDetails", "vehicleDetails", "approvalStatus", "availability"]
+    },
+    "RestaurantRecord": {
+      "title": "RestaurantRecord",
+      "description": "Restaurant partner registration, owner details, FSSAI documents, and approval state",
+      "type": "object",
+      "properties": {
+        "restaurantId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerPhone": { "type": "string" },
+        "restaurantName": { "type": "string" },
+        "address": { "type": "string" },
+        "foodCategories": { "type": "array" },
+        "fssaiNumber": { "type": "string" },
+        "documents": { "type": "object" },
+        "approvalStatus": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "isOpen": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["restaurantId", "ownerId", "restaurantName", "address", "approvalStatus"]
     }
   },
   "firestore": {
     "/dishes/{dishId}": {
       "schema": "#/entities/Dish",
-      "description": "Live collection of dishes synced across all customer devices and admin panels"
+      "description": "Live collection of dishes synced across all customer devices and partner panels"
     },
     "/orders/{orderId}": {
       "schema": "#/entities/Order",
-      "description": "Live collection of customer orders and requests synced in real-time"
+      "description": "Live collection of customer orders and delivery requests synced in real-time"
     },
     "/config/{configId}": {
       "schema": "#/entities/AdminSettings",
       "description": "Global operational settings, helpline details, and coupon configuration"
+    },
+    "/users/{userId}": {
+      "schema": "#/entities/AppUser",
+      "description": "Authenticated user accounts across Customer, Rider, and Restaurant Partner roles"
+    },
+    "/riders/{userId}": {
+      "schema": "#/entities/RiderRecord",
+      "description": "Rider partner verification records, vehicles, documents, availability, and earnings"
+    },
+    "/restaurants/{restaurantId}": {
+      "schema": "#/entities/RestaurantRecord",
+      "description": "Restaurant partner registrations, FSSAI documents, and approval status"
     }
   }
 }

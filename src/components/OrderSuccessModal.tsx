@@ -1,24 +1,111 @@
-import React, { useEffect } from 'react';
-import { X, CheckCircle2, Phone, Clock, MapPin, ChefHat, Bike, Home, HeartHandshake, EyeOff } from 'lucide-react';
-import { Order } from '../types';
+import React, { useEffect, useState } from 'react';
+import {
+  ArrowLeft,
+  Headphones,
+  Phone,
+  MapPin,
+  Bike,
+  Banknote,
+  ShieldCheck,
+  MessageCircle,
+  ArrowRight,
+  Check,
+  Star,
+  Clock,
+  Store,
+} from 'lucide-react';
+import {
+  APIProvider,
+  Map as GoogleMap,
+  AdvancedMarker,
+  Pin,
+  useApiLoadingStatus,
+  APILoadingStatus,
+} from '@vis.gl/react-google-maps';
+import { Order, CartItem } from '../types';
+import { GOPALGANJ_COORDS, KitchenHubConfig } from '../utils/geoUtils';
+import { useGoogleMapsApiKey } from '../utils/mapsClient';
+import trackingMapImg from '../assets/images/order_tracking_map_1794636850065.jpg';
+import foodBowlImg from '../assets/images/role_food_bowl_1794635221244.jpg';
 
 interface OrderSuccessModalProps {
   isOpen: boolean;
   order: Order | null;
   onClose: () => void;
   onDismissActiveOrder?: () => void;
+  onReorder?: (items: CartItem[]) => void;
   helplineName: string;
   helplineNumber: string;
+  whatsappNumber: string;
+  kitchenHub?: KitchenHubConfig;
 }
+
+const TrackingMapContent: React.FC<{
+  hub: KitchenHubConfig;
+  dest: { lat: number; lng: number };
+  currentStep: number;
+  riderName: string;
+  fallbackImg: React.ReactNode;
+}> = ({ hub, dest, currentStep, riderName, fallbackImg }) => {
+  const status = useApiLoadingStatus();
+
+  if (status === APILoadingStatus.FAILED || status === APILoadingStatus.AUTH_FAILURE) {
+    return <>{fallbackImg}</>;
+  }
+
+  const progressRatio =
+    currentStep >= 3 ? 1 : currentStep === 2 ? 0.58 : currentStep === 1 ? 0.15 : 0.05;
+  const riderLat = hub.lat + (dest.lat - hub.lat) * progressRatio;
+  const riderLng = hub.lng + (dest.lng - hub.lng) * progressRatio;
+  const midLat = (hub.lat + dest.lat) / 2;
+  const midLng = (hub.lng + dest.lng) / 2;
+
+  return (
+    <div className="relative h-52 sm:h-56 w-full overflow-hidden bg-[#F9EFE6]">
+      <GoogleMap
+        mapId="DEMO_MAP_ID"
+        internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+        defaultCenter={{ lat: midLat, lng: midLng }}
+        defaultZoom={13}
+        gestureHandling="cooperative"
+        disableDefaultUI={true}
+        zoomControl={true}
+      >
+        {/* Kitchen Origin Marker */}
+        <AdvancedMarker position={{ lat: hub.lat, lng: hub.lng }} title={hub.name || 'Kitchen'}>
+          <Pin background="#3D1C0A" borderColor="#FFFFFF" glyphColor="#FF6B00">
+            <Store className="w-3.5 h-3.5" />
+          </Pin>
+        </AdvancedMarker>
+
+        {/* Live Rider Marker */}
+        <AdvancedMarker position={{ lat: riderLat, lng: riderLng }} title={riderName}>
+          <Pin background="#F59E0B" borderColor="#FFFFFF" glyphColor="#FFFFFF" scale={1.1}>
+            <Bike className="w-3.5 h-3.5" />
+          </Pin>
+        </AdvancedMarker>
+
+        {/* Customer Doorstep Marker */}
+        <AdvancedMarker position={{ lat: dest.lat, lng: dest.lng }} title="Your Doorstep">
+          <Pin background="#FF6B00" borderColor="#FFFFFF" glyphColor="#FFFFFF" scale={1.15} />
+        </AdvancedMarker>
+      </GoogleMap>
+    </div>
+  );
+};
 
 export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
   isOpen,
   order,
   onClose,
-  onDismissActiveOrder,
-  helplineName,
-  helplineNumber
+  onReorder,
+  helplineNumber,
+  whatsappNumber,
+  kitchenHub = GOPALGANJ_COORDS,
 }) => {
+  const [etaRemainingMins, setEtaRemainingMins] = useState(18);
+  const { apiKey } = useGoogleMapsApiKey();
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -29,186 +116,365 @@ export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !order) return null;
+  useEffect(() => {
+    if (order) {
+      const elapsedMins = Math.floor((Date.now() - order.createdAt) / 60000);
+      const remaining = Math.max(5, 22 - elapsedMins);
+      setEtaRemainingMins(remaining);
+    }
+  }, [order]);
 
-  const steps = [
-    { status: 'Pending', label: 'Order Received', desc: 'Directly received in Kitchen Admin Panel', icon: Clock },
-    { status: 'Accepted', label: 'Accepted & Cooking', desc: 'Freshly preparing your dishes', icon: ChefHat },
-    { status: 'Out for Delivery', label: 'Out for Delivery', desc: 'Rider is on the way to you', icon: Bike },
-    { status: 'Delivered', label: 'Delivered', desc: 'Order delivered. Enjoy your meal!', icon: Home }
-  ];
+  if (!isOpen || !order) return null;
 
   const getStepIndex = (st: string) => {
     switch (st) {
-      case 'Pending': return 0;
-      case 'Accepted': return 1;
-      case 'Out for Delivery': return 2;
-      case 'Delivered': return 3;
-      default: return 0;
+      case 'Order Placed - Pay Cash on Delivery':
+      case 'Pending':
+        return 0;
+      case 'Accepted':
+        return 1;
+      case 'Out for Delivery':
+        return 2;
+      case 'Delivered':
+        return 3;
+      default:
+        return 0;
     }
   };
 
   const currentStep = getStepIndex(order.status);
 
+  const steps = [
+    { label: 'Order Placed' },
+    { label: 'Preparing' },
+    { label: 'Out for Delivery' },
+    { label: 'Delivered' },
+  ];
+
+  const headlineMap = [
+    order.status === 'Order Placed - Pay Cash on Delivery'
+      ? 'Order Placed! Pay Cash on Delivery'
+      : 'Order Placed! Kitchen Notified',
+    'Kitchen is preparing your meal!',
+    'Your order is on the way!',
+    'Order Delivered! Enjoy your food!',
+  ];
+
+  const riderName = order.riderInfo?.name || 'Ramesh Kumar (Hello Bite Fleet)';
+  const riderBike = order.riderInfo?.bikeNumber || 'BR-28-AC-4029';
+  const riderPhone = order.riderInfo?.phone || helplineNumber;
+
+  const handleWhatsAppSupport = () => {
+    const text = encodeURIComponent(
+      `Hi Hello Bite Support, I am tracking Order #${order.orderNumber}.`
+    );
+    window.open(`https://wa.me/${whatsappNumber}?text=${text}`, '_blank');
+  };
+
+  const progressWidthPct = Math.min(100, Math.round((currentStep / 3) * 100));
+
+  const destCoords = order.gpsCoordinates
+    ? { lat: order.gpsCoordinates.latitude, lng: order.gpsCoordinates.longitude }
+    : { lat: kitchenHub.lat + 0.01, lng: kitchenHub.lng + 0.01 };
+
+  const fallbackIllustratedMap = (
+    <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-[#F9EFE6]">
+      <img
+        src={trackingMapImg}
+        alt="Live Delivery Route Map"
+        className="w-full h-full object-cover opacity-90"
+      />
+      <div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-[#FFF8F0]/90" />
+
+      <svg
+        viewBox="0 0 400 180"
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        preserveAspectRatio="none"
+      >
+        <path
+          d="M 110 132 L 285 52"
+          stroke="#FF6B00"
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray="10 6"
+          opacity="0.95"
+        />
+      </svg>
+
+      <div
+        className="absolute left-[22%] bottom-[16%] -translate-x-1/2 flex flex-col items-center transition-all duration-700"
+        style={{
+          transform:
+            currentStep >= 3
+              ? 'translate(140px, -72px)'
+              : currentStep === 2
+                ? 'translate(55px, -28px)'
+                : 'translate(0px, 0px)',
+        }}
+      >
+        <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-[#FF6B00] to-[#F59E0B] text-white flex items-center justify-center shadow-lg border-2 border-white">
+          <Bike className="w-6 h-6" />
+        </div>
+        <span className="mt-1 bg-white/95 text-[#3D1C0A] text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs border border-orange-100">
+          {currentStep >= 3 ? 'Arrived' : 'Rider'}
+        </span>
+      </div>
+
+      <div className="absolute right-[20%] top-[16%] flex flex-col items-center">
+        <div className="w-11 h-11 rounded-full bg-white text-[#FF6B00] flex items-center justify-center shadow-lg border-3 border-[#FF6B00]">
+          <MapPin className="w-5 h-5 fill-orange-100" />
+        </div>
+        <span className="mt-1 bg-[#3D1C0A] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-xs">
+          Your Doorstep
+        </span>
+      </div>
+    </div>
+  );
+
   return (
-    <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-stone-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/65 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in"
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
+        if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div 
-        className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 my-4"
+      <div
+        className="bg-[#FFF8F0] rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col max-h-[94vh] border border-orange-200/80"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Celebration Banner */}
-        <div className="bg-linear-to-r from-emerald-600 to-teal-700 text-white p-6 text-center relative">
+        {/* Clean Header: Back Arrow + Order Tracking + Support */}
+        <div className="bg-white/95 px-4 py-3.5 flex items-center justify-between border-b border-orange-100 shrink-0">
           <button
+            type="button"
             onClick={onClose}
-            id="order-success-close-x-btn"
-            title="Close tracker"
-            className="absolute top-3 right-3 p-2 text-white/80 hover:text-white bg-white/15 hover:bg-white/25 rounded-full transition-colors cursor-pointer"
+            id="order-tracker-close-x-btn"
+            className="w-9 h-9 rounded-full bg-[#FFF8F0] hover:bg-orange-100 text-[#3D1C0A] flex items-center justify-center transition-colors cursor-pointer"
+            aria-label="Back"
           >
-            <X className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
           </button>
 
-          <div className="w-14 h-14 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-2">
-            <CheckCircle2 className="w-9 h-9 text-white animate-bounce" />
+          <div className="text-center">
+            <h2 className="font-display font-black text-base text-[#3D1C0A] leading-tight">
+              Order Tracking
+            </h2>
+            <p className="text-[11px] font-bold text-[#FF6B00]">
+              Order #{order.orderNumber}
+            </p>
           </div>
 
-          <h2 className="font-display font-extrabold text-2xl">
-            Order Placed Successfully!
-          </h2>
-          <p className="text-emerald-100 text-xs mt-1">
-            Order ID: <span className="font-mono font-bold text-white text-sm">#{order.orderNumber}</span>
-          </p>
-          <p className="text-[11px] text-emerald-200 mt-0.5">
-            Saved to Kitchen Admin in real-time
-          </p>
+          <button
+            type="button"
+            onClick={handleWhatsAppSupport}
+            className="w-9 h-9 rounded-full bg-[#FFF8F0] hover:bg-orange-100 text-[#FF6B00] flex items-center justify-center transition-colors cursor-pointer"
+            title="Customer Support"
+          >
+            <Headphones className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Live Status Tracker */}
-        <div className="p-5 sm:p-6 space-y-5">
-          <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Live Order Tracker
-              </span>
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-700">
-                {order.status}
-              </span>
-            </div>
+        {/* Scrollable Content */}
+        <div className="overflow-y-auto flex-1">
+          {apiKey ? (
+            <APIProvider apiKey={apiKey} language="en" region="IN">
+              <TrackingMapContent
+                hub={kitchenHub}
+                dest={destCoords}
+                currentStep={currentStep}
+                riderName={riderName}
+                fallbackImg={fallbackIllustratedMap}
+              />
+            </APIProvider>
+          ) : (
+            fallbackIllustratedMap
+          )}
 
-            {/* Stepper */}
-            <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-stone-200">
-              {steps.map((step, idx) => {
-                const isPassed = idx <= currentStep;
-                const isCurrent = idx === currentStep;
-                const Icon = step.icon;
+          <div className="px-4 pb-5 -mt-4 relative z-10 space-y-3.5">
+            {/* Main Progress Card */}
+            <div className="bg-white rounded-3xl p-4 sm:p-5 border border-orange-100 shadow-md">
+              <div className="text-center">
+                <h3 className="font-display font-black text-lg text-[#3D1C0A]">
+                  {headlineMap[currentStep]}
+                </h3>
+                <p className="text-xs text-[#7C4A22] font-semibold mt-0.5 flex items-center justify-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-[#FF6B00]" />
+                  <span>
+                    {order.status === 'Delivered'
+                      ? 'Delivered safely to your location'
+                      : `Arriving in ${etaRemainingMins} min`}
+                  </span>
+                </p>
+              </div>
 
-                return (
-                  <div key={step.status} className="relative flex items-start gap-3">
-                    <div
-                      className={`absolute -left-6 top-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-all ${
-                        isCurrent
-                          ? 'bg-orange-600 border-white ring-4 ring-orange-100 text-white'
-                          : isPassed
-                          ? 'bg-emerald-600 border-white text-white'
-                          : 'bg-white border-stone-300 text-stone-400'
-                      }`}
-                    >
-                      {isPassed ? '✓' : idx + 1}
-                    </div>
+              {/* Horizontal 4-Step Checkmark Bar */}
+              <div className="mt-5 relative">
+                <div className="absolute top-3.5 left-[10%] right-[10%] h-1 bg-stone-200 rounded-full" />
+                <div
+                  className="absolute top-3.5 left-[10%] h-1 bg-linear-to-r from-[#FF6B00] to-[#F59E0B] rounded-full transition-all duration-500"
+                  style={{ width: `${Math.round(progressWidthPct * 0.8)}%` }}
+                />
 
-                    <div>
-                      <div className={`text-xs font-bold flex items-center gap-1.5 ${
-                        isCurrent ? 'text-orange-600' : isPassed ? 'text-stone-900' : 'text-stone-400'
-                      }`}>
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{step.label}</span>
+                <div className="grid grid-cols-4 gap-1 relative z-10">
+                  {steps.map((step, idx) => {
+                    const isPassed = idx <= currentStep;
+                    const isCurrent = idx === currentStep;
+                    return (
+                      <div key={step.label} className="flex flex-col items-center text-center">
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all ${
+                            isPassed
+                              ? 'bg-[#FF6B00] border-white text-white shadow-sm'
+                              : 'bg-stone-200 border-white text-stone-400'
+                          } ${isCurrent ? 'ring-4 ring-orange-100' : ''}`}
+                        >
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        </div>
+                        <span
+                          className={`text-[10px] leading-tight mt-1.5 font-bold ${
+                            isPassed ? 'text-[#3D1C0A]' : 'text-stone-400'
+                          }`}
+                        >
+                          {step.label}
+                        </span>
                       </div>
-                      <p className="text-[11px] text-stone-500">
-                        {step.desc}
-                      </p>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Rider Info Row */}
+              <div className="mt-4 pt-3.5 border-t border-orange-100 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-linear-to-br from-[#FF6B00] to-[#F59E0B] text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Bike className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-display font-black text-sm text-[#3D1C0A] truncate">
+                      {riderName}
+                    </h4>
+                    <div className="flex items-center gap-2 text-[11px] text-[#7C4A22] font-semibold">
+                      <span className="inline-flex items-center gap-0.5 text-amber-600 font-extrabold">
+                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                        4.8
+                      </span>
+                      <span>·</span>
+                      <span className="truncate">{riderBike}</span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                </div>
 
-          {/* Delivery & Items Details */}
-          <div className="text-xs space-y-2 text-stone-700 bg-stone-50/70 p-3.5 rounded-2xl border border-stone-200">
-            <div className="flex items-start gap-2">
-              <MapPin className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold">Delivering to:</span> {order.customerName} ({order.phone})
-                <div className="text-stone-500 text-[11px] mt-0.5">
-                  {order.address}, {order.areaName}
-                  {order.landmark ? ` (Near ${order.landmark})` : ''}
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={`tel:${riderPhone}`}
+                    className="w-10 h-10 rounded-full bg-[#FFF8F0] hover:bg-orange-100 text-[#FF6B00] border border-orange-200 flex items-center justify-center transition-colors"
+                    title="Call Rider"
+                  >
+                    <Phone className="w-4 h-4" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleWhatsAppSupport}
+                    className="w-10 h-10 rounded-full bg-[#FFF8F0] hover:bg-orange-100 text-[#FF6B00] border border-orange-200 flex items-center justify-center transition-colors cursor-pointer"
+                    title="Message Support"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Items summary */}
-            <div className="pt-2 border-t border-stone-200 text-[11px] space-y-1">
-              <div className="font-semibold text-stone-800">Items Ordered:</div>
-              {order.items.map((it, idx) => (
-                <div key={idx} className="flex justify-between text-stone-600">
-                  <span>{it.name} × {it.quantity}</span>
-                  <span>₹{it.price * it.quantity}</span>
-                </div>
-              ))}
-              {Boolean(order.deliveryTip && order.deliveryTip > 0) && (
-                <div className="flex justify-between text-emerald-700 font-medium pt-1">
-                  <span className="flex items-center gap-1">
-                    <HeartHandshake className="w-3 h-3" /> Delivery Partner Tip
+            {/* Cash on Delivery Confirmation Banner */}
+            {(order.paymentMethod === 'Cash on Delivery' ||
+              order.status === 'Order Placed - Pay Cash on Delivery') && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 flex items-start gap-2.5 text-xs text-emerald-900">
+                <Banknote className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-extrabold block">
+                    Order Placed - Pay Cash on Delivery
                   </span>
-                  <span>₹{order.deliveryTip}</span>
+                  <span className="text-[11px] text-emerald-800">
+                    Keep <strong>₹{order.total}</strong> cash ready when your rider reaches {order.address}.
+                  </span>
                 </div>
-              )}
+              </div>
+            )}
+
+            {/* Compact Destination & Bill Card */}
+            <div className="bg-white rounded-2xl p-3.5 border border-orange-100 shadow-xs space-y-2 text-xs">
+              <div className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-[#FF6B00] shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <span className="font-extrabold text-[#3D1C0A]">
+                    {order.customerName} ({order.phone})
+                  </span>
+                  <p className="text-[11px] text-stone-500 truncate">
+                    {order.address}
+                    {order.landmark ? ` · Near ${order.landmark}` : ''}
+                  </p>
+                </div>
+                {order.locationVerified && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg shrink-0">
+                    <ShieldCheck className="w-3 h-3" /> GPS OK
+                  </span>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-orange-100 space-y-1 text-[11px]">
+                {order.items.map((it, idx) => (
+                  <div key={idx} className="flex justify-between text-stone-600">
+                    <span>
+                      {it.name} × {it.quantity}
+                    </span>
+                    <span className="font-bold text-[#3D1C0A]">
+                      ₹{it.price * it.quantity}
+                    </span>
+                  </div>
+                ))}
+                <div className="pt-1.5 border-t border-dashed border-orange-200 flex justify-between font-black text-xs text-[#3D1C0A]">
+                  <span>Total ({order.paymentMethod})</span>
+                  <span className="text-[#FF6B00]">₹{order.total}</span>
+                </div>
+              </div>
             </div>
 
-            <div className="pt-2 border-t border-stone-200 flex justify-between font-bold text-stone-900">
-              <span>Total Amount ({order.paymentMethod}):</span>
-              <span className="text-orange-600 text-sm">₹{order.total}</span>
-            </div>
-          </div>
+            {/* Bottom Card */}
+            <div className="bg-linear-to-r from-[#FF6B00] via-[#FF7E1A] to-[#F59E0B] rounded-3xl p-4 text-white flex items-center justify-between gap-3 shadow-lg shadow-orange-500/25">
+              <div>
+                <h4 className="font-display font-black text-lg leading-tight">
+                  Enjoy your meal! ❤️
+                </h4>
+                <p className="text-[11px] text-orange-100 font-medium mt-0.5">
+                  Freshly prepared at Hello Bite Kitchen
+                </p>
+                <div className="flex items-center gap-2 mt-2.5">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="bg-white text-[#FF6B00] font-black text-xs px-3.5 py-1.5 rounded-xl shadow-xs cursor-pointer"
+                  >
+                    Back to Menu
+                  </button>
+                  {onReorder && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onReorder(order.items);
+                        onClose();
+                      }}
+                      className="bg-black/20 hover:bg-black/30 text-white font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Reorder</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
 
-          {/* Actions: Big primary close button to easily dismiss & helpline */}
-          <div className="space-y-2">
-            <button
-              onClick={onClose}
-              id="order-success-close-btn"
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 text-xs sm:text-sm transition-all active:scale-98 cursor-pointer"
-            >
-              <span>Close Tracker & Return to Menu</span>
-            </button>
-
-            <div className="flex items-center gap-2">
-              <a
-                href={`tel:${helplineNumber}`}
-                className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs border border-stone-300 transition-colors"
-              >
-                <Phone className="w-3.5 h-3.5 text-orange-600" />
-                <span>Call Helpline ({helplineNumber})</span>
-              </a>
-
-              {onDismissActiveOrder && (
-                <button
-                  onClick={() => {
-                    onDismissActiveOrder();
-                    onClose();
-                  }}
-                  title="Clear tracker badge from navbar"
-                  className="bg-stone-100 hover:bg-stone-200 text-stone-600 font-medium py-2.5 px-3 rounded-xl flex items-center justify-center gap-1 text-xs border border-stone-200 transition-colors"
-                >
-                  <EyeOff className="w-3.5 h-3.5 text-stone-400" />
-                  <span>Dismiss</span>
-                </button>
-              )}
+              <img
+                src={foodBowlImg}
+                alt="Fresh Hello Bite Meal"
+                className="w-20 h-20 rounded-2xl object-cover border-2 border-white/60 shadow-md shrink-0"
+              />
             </div>
           </div>
         </div>

@@ -24,5 +24,23 @@ service cloud.firestore {
       allow read: if true;
       allow write: if true;
     }
+
+    // Authenticated user profiles (Customer, Rider, Restaurant)
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Rider / Delivery partner KYC, vehicle info, availability & earnings
+    match /riders/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Restaurant partner registrations, FSSAI documents & approval workflow
+    match /restaurants/{restaurantId} {
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }

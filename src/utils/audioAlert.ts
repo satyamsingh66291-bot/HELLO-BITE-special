@@ -117,6 +117,75 @@ class AudioAlertManager {
   public isCurrentlyAlerting(): boolean {
     return this.isAlerting;
   }
+
+  /**
+   * Play signature WhatsApp double-tone notification pop (800Hz -> 1000Hz)
+   */
+  public playWhatsAppNotificationSound() {
+    try {
+      const ctx = this.getContext();
+      const now = ctx.currentTime;
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.7, now);
+      masterGain.connect(ctx.destination);
+
+      // Pop 1
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, now);
+      gain1.gain.setValueAtTime(0.5, now);
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+      osc1.connect(gain1);
+      gain1.connect(masterGain);
+      osc1.start(now);
+      osc1.stop(now + 0.12);
+
+      // Pop 2
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1320, now + 0.14);
+      gain2.gain.setValueAtTime(0.6, now + 0.14);
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+      osc2.connect(gain2);
+      gain2.connect(masterGain);
+      osc2.start(now + 0.14);
+      osc2.stop(now + 0.35);
+    } catch (e) {
+      console.warn('AudioContext notification sound error:', e);
+    }
+  }
+
+  /**
+   * Play dedicated Rider order drop whistle/chime
+   */
+  public playRiderAlert() {
+    try {
+      const ctx = this.getContext();
+      const now = ctx.currentTime;
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.8, now);
+      masterGain.connect(ctx.destination);
+
+      // Rising tri-tone: 523Hz (C5) -> 659Hz (E5) -> 784Hz (G5)
+      [523.25, 659.25, 783.99].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const start = now + idx * 0.12;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.6, start);
+        gain.gain.exponentialRampToValueAtTime(0.01, start + 0.22);
+        osc.connect(gain);
+        gain.connect(masterGain);
+        osc.start(start);
+        osc.stop(start + 0.22);
+      });
+    } catch (e) {
+      console.warn('Rider alert chime error:', e);
+    }
+  }
 }
 
 export const audioAlert = new AudioAlertManager();

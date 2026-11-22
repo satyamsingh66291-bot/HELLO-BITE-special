@@ -29,9 +29,15 @@ import {
   Tag,
   HeartHandshake,
   TrendingUp,
-  BarChart3
+  BarChart3,
+  Users,
+  MessageCircle,
+  Share2,
+  Store,
+  FileCheck,
+  ShieldCheck
 } from 'lucide-react';
-import { Dish, Order, AdminSettings, DeliveryArea, OrderStatus, Coupon } from '../types';
+import { Dish, Order, AdminSettings, DeliveryArea, OrderStatus, Coupon, AppUser, KitchenStatus, RiderRecord, RestaurantRecord } from '../types';
 import { audioAlert } from '../utils/audioAlert';
 import { DishModal } from './DishModal';
 import { FirebaseGuideModal } from './FirebaseGuideModal';
@@ -54,11 +60,13 @@ interface AdminDashboardProps {
   onResetDemoData: () => void;
   onDeleteOrder?: (orderId: string) => void;
   onClearAllOrders?: () => void;
+  onOpenRider?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
   onBackToStore,
+  onOpenRider,
   dishes,
   orders,
   settings,
@@ -72,27 +80,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteOrder,
   onClearAllOrders
 }) => {
-  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'coupons' | 'settings'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'coupons' | 'users' | 'partners' | 'settings'>('orders');
   const [orderFilter, setOrderFilter] = useState<string>('All');
   const [orderSearch, setOrderSearch] = useState<string>('');
   const [menuSearch, setMenuSearch] = useState<string>('');
   const [menuCategory, setMenuCategory] = useState<string>('All');
+  const [userSearch, setUserSearch] = useState<string>('');
+  const [users, setUsers] = useState<AppUser[]>(() => storeService.getUsers());
+  const [riders, setRiders] = useState<RiderRecord[]>(() => storeService.getRiders());
+  const [restaurants, setRestaurants] = useState<RestaurantRecord[]>(() => storeService.getRestaurants());
 
   // Modal States
   const [dishModalOpen, setDishModalOpen] = useState(false);
   const [editingDish, setEditingDish] = useState<Dish | null>(null);
   const [guideModalOpen, setGuideModalOpen] = useState(false);
 
-  // Settings Local State
+  // Settings Local State & Kitchen Status
   const [localSettings, setLocalSettings] = useState<AdminSettings>(settings);
+  const [kitchenStatus, setKitchenStatusState] = useState<KitchenStatus>(settings.kitchenStatus || 'open');
   const [settingsSavedToast, setSettingsSavedToast] = useState(false);
 
   // Sound States
   const [isAlerting, setIsAlerting] = useState(false);
   const [soundVolume, setSoundVolume] = useState(settings.alertVolume);
 
+  // Subscribe to live users, riders & restaurants
+  useEffect(() => {
+    const unsubUsers = storeService.subscribeUsers((u) => setUsers(u));
+    const unsubRiders = storeService.subscribeRiders((r) => setRiders(r));
+    const unsubRestaurants = storeService.subscribeRestaurants((rest) => setRestaurants(rest));
+    return () => {
+      unsubUsers();
+      unsubRiders();
+      unsubRestaurants();
+    };
+  }, []);
+
+  const handleSetKitchenStatus = (status: KitchenStatus) => {
+    setKitchenStatusState(status);
+    storeService.setKitchenStatus(status);
+    setLocalSettings(prev => ({ ...prev, kitchenStatus: status }));
+  };
+
   // Check if any order requires new order alert
-  const pendingAlertOrders = orders.filter(o => o.isNewAlert && o.status === 'Pending');
+  const pendingAlertOrders = orders.filter(
+    o => o.isNewAlert && (o.status === 'Pending' || o.status === 'Order Placed - Pay Cash on Delivery')
+  );
 
   useEffect(() => {
     if (pendingAlertOrders.length > 0 && settings.enableAudioAlert) {
@@ -128,7 +161,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const filteredOrders = orders.filter(order => {
     const matchesFilter = 
       orderFilter === 'All' ? true :
-      orderFilter === 'Active' ? ['Pending', 'Accepted', 'Out for Delivery'].includes(order.status) :
+      orderFilter === 'Active' ? ['Order Placed - Pay Cash on Delivery', 'Pending', 'Accepted', 'Out for Delivery'].includes(order.status) :
+      orderFilter === 'Pending' ? ['Order Placed - Pay Cash on Delivery', 'Pending'].includes(order.status) :
+      orderFilter === 'COD' ? order.status === 'Order Placed - Pay Cash on Delivery' || order.paymentMethod === 'Cash on Delivery' :
       order.status === orderFilter;
 
     const matchesSearch = 
@@ -215,24 +250,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Sound Controls & Navigation Actions */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          {/* Kitchen Status Controls & Navigation Actions */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {/* Live Restaurant Kitchen Status Switcher */}
+            <div className="flex items-center gap-1 bg-stone-800 p-1 rounded-xl text-xs border border-stone-700">
+              <span className="text-[10px] font-bold text-stone-400 px-1.5 uppercase hidden sm:inline">
+                Kitchen:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleSetKitchenStatus('open')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  kitchenStatus === 'open' 
+                    ? 'bg-emerald-600 text-white shadow-xs' 
+                    : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                ● Open
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetKitchenStatus('busy')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  kitchenStatus === 'busy' 
+                    ? 'bg-amber-500 text-stone-950 shadow-xs' 
+                    : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                ● Busy
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetKitchenStatus('closed')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  kitchenStatus === 'closed' 
+                    ? 'bg-red-600 text-white shadow-xs' 
+                    : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                ● Closed
+              </button>
+            </div>
+
             <button
               onClick={handleTestChime}
               title="Test loud chime alarm"
               className="flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-xl border border-stone-700 transition-colors"
             >
               <Volume2 className="w-3.5 h-3.5 text-orange-400" />
-              <span className="hidden sm:inline">Test Loud Chime</span>
+              <span className="hidden sm:inline">Test Chime</span>
             </button>
 
             <button
               onClick={onBackToStore}
-              className="bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1"
+              className="bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
             >
               <ShoppingBag className="w-3.5 h-3.5 text-orange-400" />
               <span className="hidden md:inline">Customer Store</span>
             </button>
+
+            {onOpenRider && (
+              <button
+                onClick={onOpenRider}
+                className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-750 text-emerald-300 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                title="Switch to Delivery Partner (Rider) Dashboard"
+              >
+                <Bike className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Rider View</span>
+              </button>
+            )}
 
             <button
               onClick={onLogout}
@@ -255,10 +341,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             <ShoppingBag className="w-4 h-4" />
-            <span>Live Order Tracking</span>
-            {orders.filter(o => o.status === 'Pending').length > 0 && (
+            <span>Live Orders</span>
+            {orders.filter(o => o.status === 'Pending' || o.status === 'Order Placed - Pay Cash on Delivery').length > 0 && (
               <span className="bg-orange-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-extrabold">
-                {orders.filter(o => o.status === 'Pending').length}
+                {orders.filter(o => o.status === 'Pending' || o.status === 'Order Placed - Pay Cash on Delivery').length}
               </span>
             )}
           </button>
@@ -273,6 +359,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <UtensilsCrossed className="w-4 h-4" />
             <span>Menu &amp; Stock ({dishes.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            id="admin-nav-users-tab"
+            className={`py-2.5 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === 'users'
+                ? 'border-orange-500 text-orange-400'
+                : 'border-transparent text-stone-400 hover:text-stone-200'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Users ({users.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('partners')}
+            id="admin-nav-partners-tab"
+            className={`py-2.5 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === 'partners'
+                ? 'border-orange-500 text-orange-400'
+                : 'border-transparent text-stone-400 hover:text-stone-200'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Partners &amp; Approvals ({riders.length + restaurants.length})</span>
+            {(riders.filter(r => r.approvalStatus === 'pending').length + restaurants.filter(r => r.approvalStatus === 'pending').length) > 0 && (
+              <span className="bg-amber-500 text-stone-950 text-[10px] px-1.5 rounded-full font-black">
+                {riders.filter(r => r.approvalStatus === 'pending').length + restaurants.filter(r => r.approvalStatus === 'pending').length}
+              </span>
+            )}
           </button>
 
           <button
@@ -412,7 +529,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="bg-white p-3 sm:p-4 rounded-2xl border border-stone-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
               {/* Status Filter Buttons */}
               <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
-                {['All', 'Pending', 'Active', 'Delivered', 'Cancelled'].map((st) => (
+                {['All', 'Pending', 'COD', 'Active', 'Delivered', 'Cancelled'].map((st) => (
                   <button
                     key={st}
                     onClick={() => setOrderFilter(st)}
@@ -472,6 +589,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             #{order.orderNumber}
                           </span>
                           <span className={`text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${
+                            order.status === 'Order Placed - Pay Cash on Delivery' ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 font-black' :
                             order.status === 'Pending' ? 'bg-amber-100 text-amber-800 animate-pulse' :
                             order.status === 'Accepted' ? 'bg-blue-100 text-blue-800' :
                             order.status === 'Out for Delivery' ? 'bg-purple-100 text-purple-800' :
@@ -480,6 +598,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           }`}>
                             {order.status}
                           </span>
+
+                          {/* GPS Location Verified Badge */}
+                          {order.locationVerified && (
+                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-emerald-600" />
+                              <span>GPS Verified ({order.deliveryDistrict || 'Gopalganj/Siwan'})</span>
+                            </span>
+                          )}
 
                           {/* Delivery Partner Tip Highlight Badge */}
                           {Boolean(order.deliveryTip && order.deliveryTip > 0) && (
@@ -600,13 +726,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                          {order.status === 'Pending' && (
+                          {(order.status === 'Pending' || order.status === 'Order Placed - Pay Cash on Delivery') && (
                             <button
                               onClick={() => {
                                 onUpdateOrderStatus(order.id, 'Accepted');
                                 audioAlert.stopContinuousAlert();
                               }}
-                              className="bg-orange-600 hover:bg-orange-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1"
+                              className="bg-orange-600 hover:bg-orange-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 cursor-pointer"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               <span>Accept &amp; Send to Kitchen</span>
@@ -809,6 +935,330 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
+        {/* ======================= TAB: WHATSAPP CUSTOMERS GROUP ======================= */}
+        {activeTab === 'users' && (
+          <div className="space-y-5 animate-in fade-in">
+            {/* Top Overview Card */}
+            <div className="bg-linear-to-r from-emerald-950 via-stone-900 to-teal-950 text-white rounded-3xl p-6 shadow-md border border-emerald-500/30">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-500/20 text-emerald-400 font-extrabold text-[11px] px-2.5 py-0.5 rounded-full border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1">
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      Centralized Firestore Group
+                    </span>
+                    <span className="text-stone-400 text-xs">/users collection</span>
+                  </div>
+                  <h3 className="font-display font-extrabold text-xl sm:text-2xl mt-1.5 text-white">
+                    Signed-In WhatsApp Foodies ({users.length})
+                  </h3>
+                  <p className="text-stone-300 text-xs mt-1 max-w-xl leading-relaxed">
+                    Every user who verifies via WhatsApp OTP is automatically grouped here in Firestore. You can track customer activity, order frequency, and broadcast instant promo discounts directly to their WhatsApp.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-center shrink-0">
+                  <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10">
+                    <div className="text-xl font-black text-emerald-400">{users.length}</div>
+                    <div className="text-[10px] text-stone-300 uppercase font-bold">Total Foodies</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10">
+                    <div className="text-xl font-black text-amber-400">
+                      {users.reduce((acc, u) => acc + (u.orderCount || 0), 0)}
+                    </div>
+                    <div className="text-[10px] text-stone-300 uppercase font-bold">Total Orders</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Search & Actions Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-stone-200">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search customer by name or phone..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-stone-200 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="text-xs text-stone-500 font-medium flex items-center gap-1 self-center">
+                <span>Showing <strong>{
+                  users.filter(u => 
+                    u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+                    u.phoneNumber.includes(userSearch)
+                  ).length
+                }</strong> registered customers</span>
+              </div>
+            </div>
+
+            {/* Customers Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {users.length === 0 ? (
+                <div className="col-span-full py-16 text-center bg-white rounded-3xl border border-stone-200">
+                  <div className="w-14 h-14 mx-auto bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mb-3">
+                    <Users className="w-7 h-7" />
+                  </div>
+                  <h4 className="font-bold text-stone-900 text-base">No signed-in customers yet</h4>
+                  <p className="text-stone-500 text-xs mt-1 max-w-sm mx-auto">
+                    Customers who verify via WhatsApp OTP on checkout or the Sign In button will automatically appear here in real time.
+                  </p>
+                </div>
+              ) : (
+                users
+                  .filter(u => 
+                    u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+                    u.phoneNumber.includes(userSearch)
+                  )
+                  .map((user) => {
+                    const joinDate = new Date(user.createdAt || Date.now()).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric'
+                    });
+
+                    const promoMsg = encodeURIComponent(
+                      `Hello ${user.name}! 🍔 Exclusive offer from Hello Bite: Enjoy flat ₹50 OFF on your favorite dishes today across Gopalganj & Siwan. Use code FIRSTBITE! Order now: ${window.location.origin}`
+                    );
+
+                    return (
+                      <div
+                        key={user.id}
+                        className="bg-white rounded-2xl border border-stone-200 p-4 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between space-y-3"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-10 h-10 rounded-xl bg-linear-to-tr from-emerald-600 to-teal-500 text-white font-extrabold flex items-center justify-center text-base">
+                                {user.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-stone-900 text-sm leading-tight">{user.name}</h4>
+                                <a 
+                                  href={`tel:${user.phoneNumber}`}
+                                  className="text-stone-500 text-xs hover:text-emerald-600 transition-colors"
+                                >
+                                  +91 {user.phoneNumber}
+                                </a>
+                              </div>
+                            </div>
+
+                            <span className="bg-emerald-50 text-emerald-800 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border border-emerald-200">
+                              Verified
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs pt-3 mt-3 border-t border-stone-100">
+                            <div className="bg-stone-50 p-2 rounded-xl">
+                              <span className="text-[10px] text-stone-400 font-bold uppercase block">Customer Group</span>
+                              <span className="font-semibold text-stone-800 text-[11px]">{user.group || 'Signed-In Users'}</span>
+                            </div>
+                            <div className="bg-stone-50 p-2 rounded-xl">
+                              <span className="text-[10px] text-stone-400 font-bold uppercase block">Orders Placed</span>
+                              <span className="font-semibold text-stone-800 text-[11px]">{user.orderCount || 0} Orders</span>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-stone-400 mt-2">
+                            Joined: {joinDate}
+                          </div>
+                        </div>
+
+                        {/* WhatsApp Broadcast Button */}
+                        <div className="pt-2 border-t border-stone-100">
+                          <a
+                            href={`https://wa.me/91${user.phoneNumber}?text=${promoMsg}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs py-2 px-3 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5 fill-emerald-800" />
+                            <span>Broadcast Offer (WhatsApp)</span>
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ======================= TAB: PARTNERS & KYC APPROVALS ======================= */}
+        {activeTab === 'partners' && (
+          <div className="space-y-6 animate-in fade-in">
+            {/* Restaurants Approval Section */}
+            <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Store className="w-5 h-5 text-orange-600" />
+                  <div>
+                    <h3 className="font-display font-extrabold text-base text-stone-900">
+                      Restaurant Partner Applications ({restaurants.length})
+                    </h3>
+                    <p className="text-xs text-stone-500">
+                      Approve verified FSSAI kitchens to showcase them in the Hello Bite storefront.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {restaurants.length === 0 ? (
+                <div className="text-center py-8 text-xs text-stone-500">
+                  No restaurant partner registrations yet. Partners can register via Sign In → Restaurant Partner.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {restaurants.map((rest) => (
+                    <div
+                      key={rest.restaurantId}
+                      className="p-4 rounded-2xl border border-stone-200 bg-stone-50/60 flex flex-col justify-between gap-3"
+                    >
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-extrabold text-sm text-stone-900">
+                            {rest.restaurantName}
+                          </h4>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              rest.approvalStatus === 'approved'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : rest.approvalStatus === 'rejected'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {rest.approvalStatus}
+                          </span>
+                        </div>
+                        <div className="text-stone-600">
+                          Owner: <strong>{rest.ownerName}</strong> · {rest.ownerPhone}
+                        </div>
+                        <div className="text-stone-500">
+                          {rest.address} ({rest.city})
+                        </div>
+                        <div className="text-stone-700 font-semibold">
+                          FSSAI: <span className="font-mono">{rest.fssaiNumber}</span>
+                        </div>
+                        {rest.foodCategories.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {rest.foodCategories.map((c) => (
+                              <span
+                                key={c}
+                                className="bg-orange-100 text-orange-800 text-[10px] font-bold px-2 py-0.5 rounded"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 pt-2 border-t border-stone-200">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            storeService.updateRestaurantApproval(rest.restaurantId, 'approved')
+                          }
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl cursor-pointer"
+                        >
+                          ✓ Approve Kitchen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            storeService.updateRestaurantApproval(rest.restaurantId, 'rejected')
+                          }
+                          className="bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs px-3 py-2 rounded-xl cursor-pointer"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Riders Approval Section */}
+            <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Bike className="w-5 h-5 text-emerald-600" />
+                  <div>
+                    <h3 className="font-display font-extrabold text-base text-stone-900">
+                      Rider &amp; Delivery Partner KYC ({riders.length})
+                    </h3>
+                    <p className="text-xs text-stone-500">
+                      Verify Driving Licence &amp; Vehicle RC registrations from /riders collection.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {riders.length === 0 ? (
+                <div className="text-center py-8 text-xs text-stone-500">
+                  No rider KYC applications yet. Partners can register via Sign In → Rider &amp; Ride Partner.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {riders.map((r) => (
+                    <div
+                      key={r.userId}
+                      className="p-4 rounded-2xl border border-stone-200 bg-stone-50/60 flex flex-col justify-between gap-3"
+                    >
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-extrabold text-sm text-stone-900">
+                            {r.personalDetails.fullName}
+                          </h4>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              r.approvalStatus === 'approved'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : r.approvalStatus === 'rejected'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {r.approvalStatus}
+                          </span>
+                        </div>
+                        <div className="text-stone-600">
+                          Phone: <strong>{r.personalDetails.phoneNumber}</strong> · City: {r.personalDetails.city}
+                        </div>
+                        <div className="text-stone-700 font-semibold">
+                          {r.vehicleDetails.vehicleType}: <span className="font-mono">{r.vehicleDetails.vehicleNumber}</span> · DL: <span className="font-mono">{r.vehicleDetails.drivingLicenceNumber}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-2 border-t border-stone-200">
+                        <button
+                          type="button"
+                          onClick={() => storeService.updateRiderApproval(r.userId, 'approved')}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl cursor-pointer"
+                        >
+                          ✓ Approve Rider
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => storeService.updateRiderApproval(r.userId, 'rejected')}
+                          className="bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs px-3 py-2 rounded-xl cursor-pointer"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ======================= TAB 4: SETTINGS & FIREBASE ======================= */}
         {activeTab === 'settings' && (
           <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in">
@@ -944,62 +1394,114 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* Dynamic Delivery Areas & Delivery Charge Editor */}
+            {/* Dynamic Per-KM Delivery Pricing & Kitchen Hub Coordinates */}
             <div className="bg-white p-5 sm:p-6 rounded-3xl border border-stone-200 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h3 className="font-display font-extrabold text-base text-stone-900 flex items-center gap-2">
                     <MapPin className="w-5 h-5 text-orange-600" />
-                    <span>Location-Based Delivery Charges (Dynamic Rates)</span>
+                    <span>Kitchen Hub GPS &amp; Per-KM Delivery Pricing</span>
                   </h3>
                   <p className="text-xs text-stone-500">
-                    Customize charges for Local Area (₹20), Near Suburbs (₹40), Outskirts (₹60), etc.
+                    Set your kitchen hub coordinates and per-kilometer delivery rate charged by distance on Google Maps.
                   </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!navigator.geolocation) return;
+                    navigator.geolocation.getCurrentPosition((pos) => {
+                      const updated = {
+                        ...localSettings,
+                        kitchenHubLat: Math.round(pos.coords.latitude * 100000) / 100000,
+                        kitchenHubLng: Math.round(pos.coords.longitude * 100000) / 100000,
+                      };
+                      setLocalSettings(updated);
+                      onSaveSettings(updated);
+                    });
+                  }}
+                  className="bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-xs px-3 py-2 rounded-xl border border-orange-200 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>Use My GPS as Kitchen Location</span>
+                </button>
               </div>
 
-              <div className="space-y-2">
-                {localSettings.areas.map((area, idx) => (
-                  <div key={area.id} className="flex items-center gap-3 p-2.5 bg-stone-50 rounded-xl border border-stone-200">
-                    <input
-                      type="text"
-                      value={area.name}
-                      onChange={(e) => {
-                        const updated = [...localSettings.areas];
-                        updated[idx].name = e.target.value;
-                        setLocalSettings({ ...localSettings, areas: updated });
-                      }}
-                      className="flex-1 bg-white text-xs px-3 py-1.5 rounded-lg border border-stone-300 font-semibold"
-                    />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Kitchen Hub Name
+                  </label>
+                  <input
+                    type="text"
+                    value={localSettings.kitchenHubName ?? 'Gopalganj Central Kitchen'}
+                    onChange={(e) =>
+                      setLocalSettings({ ...localSettings, kitchenHubName: e.target.value })
+                    }
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-stone-300 font-semibold"
+                  />
+                </div>
 
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-stone-400">Charge: ₹</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={area.charge}
-                        onChange={(e) => {
-                          const updated = [...localSettings.areas];
-                          updated[idx].charge = Number(e.target.value);
-                          setLocalSettings({ ...localSettings, areas: updated });
-                        }}
-                        className="w-20 bg-white text-xs px-2.5 py-1.5 rounded-lg border border-stone-300 font-bold text-orange-600"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Base Delivery Fee (First 2 km, ₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={localSettings.baseDeliveryFee ?? 20}
+                    onChange={(e) =>
+                      setLocalSettings({ ...localSettings, baseDeliveryFee: Number(e.target.value) })
+                    }
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-stone-300 font-bold text-orange-600"
+                  />
+                </div>
 
-                    <input
-                      type="text"
-                      placeholder="ETA (e.g. 20-30 mins)"
-                      value={area.estimatedTime}
-                      onChange={(e) => {
-                        const updated = [...localSettings.areas];
-                        updated[idx].estimatedTime = e.target.value;
-                        setLocalSettings({ ...localSettings, areas: updated });
-                      }}
-                      className="w-28 bg-white text-xs px-2.5 py-1.5 rounded-lg border border-stone-300 text-stone-600"
-                    />
-                  </div>
-                ))}
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Per-Kilometer Charge (After 2 km, ₹/km)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={localSettings.perKmRate ?? 8}
+                    onChange={(e) =>
+                      setLocalSettings({ ...localSettings, perKmRate: Number(e.target.value) })
+                    }
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-stone-300 font-bold text-orange-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Kitchen Latitude
+                  </label>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={localSettings.kitchenHubLat ?? 26.4687}
+                    onChange={(e) =>
+                      setLocalSettings({ ...localSettings, kitchenHubLat: Number(e.target.value) })
+                    }
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-stone-300 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Kitchen Longitude
+                  </label>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={localSettings.kitchenHubLng ?? 84.4442}
+                    onChange={(e) =>
+                      setLocalSettings({ ...localSettings, kitchenHubLng: Number(e.target.value) })
+                    }
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-stone-300 font-mono"
+                  />
+                </div>
               </div>
             </div>
 

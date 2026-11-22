@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
-import { X, Plus, Minus, Trash2, MapPin, Tag, ShoppingBag, ArrowRight, ShieldCheck, HeartHandshake } from 'lucide-react';
-import { CartItem, DeliveryArea, Coupon } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Minus, Trash2, MapPin, Tag, ShoppingBag, ArrowRight, ShieldCheck, HeartHandshake, Navigation } from 'lucide-react';
+import { CartItem, Coupon } from '../types';
 
 interface SpecialCartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   cartItems: CartItem[];
   onUpdateQuantity: (dishId: string, qty: number) => void;
-  areas: DeliveryArea[];
-  selectedArea: DeliveryArea;
-  onSelectArea: (area: DeliveryArea) => void;
+  currentAddressLabel?: string;
+  dynamicDeliveryCharge: number;
+  deliveryDistanceKm: number;
+  onOpenLocationPicker: () => void;
   coupons?: Coupon[];
   deliveryTip: number;
   onUpdateTip: (tip: number) => void;
@@ -18,6 +19,9 @@ interface SpecialCartDrawerProps {
     discount: number;
     couponCode?: string;
   }) => void;
+  appliedCouponCode?: string;
+  baseDeliveryFee?: number;
+  perKmRate?: number;
 }
 
 export const SpecialCartDrawer: React.FC<SpecialCartDrawerProps> = ({
@@ -25,25 +29,36 @@ export const SpecialCartDrawer: React.FC<SpecialCartDrawerProps> = ({
   onClose,
   cartItems,
   onUpdateQuantity,
-  areas,
-  selectedArea,
-  onSelectArea,
+  currentAddressLabel = 'Gopalganj / Siwan',
+  dynamicDeliveryCharge,
+  deliveryDistanceKm,
+  onOpenLocationPicker,
   coupons = [],
   deliveryTip,
   onUpdateTip,
   onProceedCheckout,
+  appliedCouponCode: initialCouponCode,
+  baseDeliveryFee = 20,
+  perKmRate = 8
 }) => {
-  const [couponCode, setCouponCode] = useState('');
+  const [couponCode, setCouponCode] = useState(initialCouponCode || '');
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; amount: number; isFreeDelivery?: boolean } | null>(null);
   const [couponError, setCouponError] = useState('');
   const [customTipInput, setCustomTipInput] = useState('');
   const [showCustomTip, setShowCustomTip] = useState(false);
 
+  // Auto-apply if initial coupon provided
+  useEffect(() => {
+    if (initialCouponCode && !appliedDiscount) {
+      handleApplyCoupon(initialCouponCode);
+    }
+  }, [initialCouponCode]);
+
   if (!isOpen) return null;
 
   // Calculate bill
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const deliveryCharge = appliedDiscount?.isFreeDelivery ? 0 : selectedArea.charge;
+  const deliveryCharge = appliedDiscount?.isFreeDelivery ? 0 : dynamicDeliveryCharge;
   const tax = Math.round(subtotal * 0.05); // 5% GST & packing
   const discountAmount = appliedDiscount?.amount || 0;
   const grandTotal = Math.max(0, subtotal + deliveryCharge + tax + deliveryTip - discountAmount);
@@ -81,7 +96,7 @@ export const SpecialCartDrawer: React.FC<SpecialCartDrawerProps> = ({
       calculatedDiscount = Math.round(matchedCoupon.maxDiscount ? Math.min(matchedCoupon.maxDiscount, pct) : pct);
     } else if (matchedCoupon.discountType === 'free_delivery') {
       isFreeDelivery = true;
-      calculatedDiscount = selectedArea.charge;
+      calculatedDiscount = dynamicDeliveryCharge;
     }
 
     setAppliedDiscount({
@@ -165,35 +180,36 @@ export const SpecialCartDrawer: React.FC<SpecialCartDrawerProps> = ({
               </div>
             ) : (
               <>
-                {/* Delivery Location Selection Option */}
-                <div className="bg-amber-50/70 p-3 rounded-2xl border border-amber-200/80">
-                  <div className="flex items-center justify-between text-xs font-bold text-stone-800 mb-1.5">
-                    <span className="flex items-center gap-1 text-orange-700">
-                      <MapPin className="w-3.5 h-3.5" /> Delivery Zone & Charge:
-                    </span>
-                    <span className="text-stone-900 font-extrabold">
-                      {appliedDiscount?.isFreeDelivery ? (
-                        <span className="text-emerald-600 line-through mr-1 font-normal">₹{selectedArea.charge}</span>
-                      ) : null}
-                      {appliedDiscount?.isFreeDelivery ? 'FREE' : `₹${selectedArea.charge}`}
-                    </span>
+                {/* Dynamic GPS Delivery Address Badge */}
+                <div className="bg-gradient-to-r from-orange-50 to-amber-50 p-3.5 rounded-2xl border border-orange-200/80">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0 text-orange-600 mt-0.5">
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-orange-700">Delivering To</span>
+                          <span className="text-[10px] bg-orange-100 text-orange-800 font-extrabold px-1.5 py-0.5 rounded-md">
+                            ~{deliveryDistanceKm.toFixed(1)} km
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-stone-800 truncate mt-0.5">
+                          {currentAddressLabel}
+                        </p>
+                        <p className="text-[10px] text-stone-500 mt-0.5">
+                          Per-km rate (₹{baseDeliveryFee} base + ₹{perKmRate}/km)
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={onOpenLocationPicker}
+                      type="button"
+                      className="px-2.5 py-1.5 bg-white hover:bg-orange-600 hover:text-white text-orange-700 text-[11px] font-bold rounded-xl border border-orange-200 shadow-xs transition-all shrink-0 cursor-pointer flex items-center gap-1"
+                    >
+                      <Navigation className="w-3 h-3" /> Change
+                    </button>
                   </div>
-
-                  <select
-                    id="cart-area-select"
-                    value={selectedArea.id}
-                    onChange={(e) => {
-                      const found = areas.find(a => a.id === e.target.value);
-                      if (found) onSelectArea(found);
-                    }}
-                    className="w-full bg-white text-xs font-semibold text-stone-800 p-2 rounded-xl border border-amber-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    {areas.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} — ₹{a.charge} delivery ({a.estimatedTime})
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
                 {/* Items List */}
@@ -404,7 +420,15 @@ export const SpecialCartDrawer: React.FC<SpecialCartDrawerProps> = ({
                   </div>
 
                   <div className="flex justify-between text-stone-600">
-                    <span>Delivery Charge ({selectedArea.name.split('(')[0]})</span>
+                    <div className="flex items-center gap-1">
+                      <span>Delivery Fee (~{deliveryDistanceKm} km)</span>
+                      <button
+                        onClick={onOpenLocationPicker}
+                        className="text-[10px] text-orange-600 font-bold hover:underline"
+                      >
+                        (Change)
+                      </button>
+                    </div>
                     <span className="font-semibold text-stone-900">
                       {appliedDiscount?.isFreeDelivery ? (
                         <span className="text-emerald-600 font-bold">FREE</span>
