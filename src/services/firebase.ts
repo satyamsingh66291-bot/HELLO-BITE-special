@@ -23,6 +23,9 @@ import {
   signOut,
   User,
   UserCredential,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
 } from 'firebase/auth';
 import {
   getStorage,
@@ -284,6 +287,22 @@ export async function signOutFirebase(): Promise<void> {
   } catch (err) {
     console.warn('Firebase signOut notice:', err);
   }
+}
+
+export type { ConfirmationResult };
+
+export function createRecaptchaVerifier(containerId: string): RecaptchaVerifier {
+  return new RecaptchaVerifier(auth, containerId, {
+    size: 'invisible',
+    callback: () => {},
+  });
+}
+
+export async function sendOtpToPhoneNumber(
+  phoneNumberWithCountryCode: string,
+  recaptchaVerifier: RecaptchaVerifier
+): Promise<ConfirmationResult> {
+  return signInWithPhoneNumber(auth, phoneNumberWithCountryCode, recaptchaVerifier);
 }
 
 function readFileAsCompressedDataUrl(file: File, maxSide = 720): Promise<string> {

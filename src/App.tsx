@@ -41,6 +41,7 @@ import { AuthFlowModal } from './components/auth/AuthFlowModal';
 import { ItemCustomizeModal } from './components/ItemCustomizeModal';
 import { GPSLocationModal } from './components/GPSLocationModal';
 import { StickyCartBar } from './components/StickyCartBar';
+import { SplashScreen } from './components/SplashScreen';
 import roleFoodImg from './assets/images/role_food_bowl_1794635221244.jpg';
 import roleRestaurantImg from './assets/images/role_restaurant_store_1794635222037.jpg';
 import welcomeFeastImg from './assets/images/hellobite_welcome_feast_1794635220422.jpg';
@@ -75,6 +76,9 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [settings, setSettings] = useState<AdminSettings>(storeService.getSettings());
   const tiffinPlans = useMemo(() => storeService.getTiffinPlans(), []);
+
+  // SplashScreen State
+  const [showSplash, setShowSplash] = useState(true);
 
   // Authenticated User
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => storeService.getCurrentUser());
@@ -420,6 +424,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FFF8F0] text-[#3D1C0A] flex flex-col font-sans selection:bg-[#FF6B00] selection:text-white">
+      {showSplash && <SplashScreen onFinished={() => setShowSplash(false)} />}
       {/* Admin Panel View */}
       {isAdminView && isAdminAuthenticated ? (
         <AdminDashboard

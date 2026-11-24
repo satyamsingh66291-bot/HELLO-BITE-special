@@ -33,6 +33,9 @@ import {
   consumeGoogleRedirectResult,
   formatGoogleAuthError,
   uploadPartnerFile,
+  createRecaptchaVerifier,
+  sendOtpToPhoneNumber,
+  ConfirmationResult,
 } from '../../services/firebase';
 import {
   GeoCoordinates,
@@ -90,7 +93,110 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   const [step, setStep] = useState<AuthScreenStep>('welcome');
   const [selectedRole, setSelectedRole] = useState<UserRole>('Customer');
 
-  // Firebase Google Auth State
+  // Firebase Phone Auth State
+  const [phoneMobile, setPhoneMobile] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [countdown, setCountdown] = useState(30);
+  const [canResend, setCanResend] = useState(false);
+  const recaptchaVerifierRef = useRef<any>(null);
+
+  useEffect(() => {
+    let timer: any;
+    if (otpSent && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((c) => {
+          if (c <= 1) {
+            setCanResend(true);
+            clearInterval(timer);
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [otpSent, countdown]);
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanNumber = phoneMobile.replace(/\D/g, '').slice(-10);
+    if (cleanNumber.length !== 10) {
+      setAuthError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      if (!recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current = createRecaptchaVerifier('recaptcha-container');
+      }
+      const formattedPhone = `+91${cleanNumber}`;
+      const conf = await sendOtpToPhoneNumber(formattedPhone, recaptchaVerifierRef.current);
+      setConfirmationResult(conf);
+      setOtpSent(true);
+      setCountdown(30);
+      setCanResend(false);
+    } catch (err: any) {
+      setAuthError(err?.message || 'Failed to send OTP via SMS. Please check mobile number or try again.');
+      if (recaptchaVerifierRef.current) {
+        try {
+          recaptchaVerifierRef.current.clear();
+        } catch {}
+        recaptchaVerifierRef.current = null;
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setAuthError('Please enter the 6-digit OTP code received on your phone.');
+      return;
+    }
+
+    if (!confirmationResult) {
+      setAuthError('OTP session expired. Please request a new OTP.');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      const result = await confirmationResult.confirm(otpCode.trim());
+      const fUser = result.user;
+      const cleanNumber = phoneMobile.replace(/\D/g, '').slice(-10);
+      const name = fUser.displayName || `Hello Bite Foodie`;
+
+      setVerifiedUid(fUser.uid);
+      setPhoneInput(cleanNumber);
+      setFullName(name);
+
+      await storeService.saveUserProfile({
+        uid: fUser.uid,
+        phoneNumber: cleanNumber,
+        name,
+        role: selectedRole,
+        city,
+      });
+
+      setStep('verified');
+      try {
+        confetti({ particleCount: 70, spread: 65, origin: { y: 0.55 } });
+      } catch {}
+    } catch (err: any) {
+      setAuthError(err?.message || 'Invalid OTP code. Please check and try again.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [canOfferRedirect, setCanOfferRedirect] = useState(false);
@@ -650,7 +756,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                     Good Food. Fresh Tiffins. Hot Delivery.
                   </h2>
                   <p className="text-xs sm:text-sm text-[#7C4A22] mt-1.5">
-                    Sign in seamlessly with Google to save your doorstep location &amp; track live orders
+                    Sign in with your mobile number &amp; OTP to save your doorstep location &amp; track live orders
                   </p>
                 </div>
 
@@ -691,13 +797,13 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                   id="auth-welcome-get-started"
                   className="w-full min-h-[52px] bg-linear-to-r from-[#FF6B00] to-[#F59E0B] hover:brightness-105 text-white font-black text-base py-3.5 rounded-2xl shadow-xl shadow-orange-500/30 flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>Continue with Google Sign-In</span>
+                  <span>Continue with Phone Number (OTP)</span>
                   <ArrowRight className="w-5 h-5" />
                 </button>
               </motion.div>
             )}
 
-            {/* SCREEN 2: FIREBASE GOOGLE SIGN-IN ONLY + INLINE RETRY */}
+            {/* SCREEN 2: MOBILE NUMBER + OTP AUTHENTICATION */}
             {step === 'login' && (
               <motion.div
                 key="login"
@@ -708,91 +814,133 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
               >
                 <div className="text-center space-y-1">
                   <h2 className="font-display font-black text-2xl sm:text-3xl text-[#3D1C0A]">
-                    Welcome Back!
+                    {otpSent ? 'Verify Phone OTP' : 'Enter Mobile Number'}
                   </h2>
                   <p className="text-xs sm:text-sm text-[#7C4A22]">
-                    Tap below to sign in securely with your Google (Gmail) account
+                    {otpSent
+                      ? `We have sent a 6-digit OTP to +91 ${phoneMobile}`
+                      : 'Sign in securely with real Firebase Phone OTP'}
                   </p>
                 </div>
 
                 <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#F5E6D3] shadow-sm space-y-4">
-                  {/* Primary 1-Tap Google / Gmail Firebase Auth Button */}
-                  <button
-                    type="button"
-                    disabled={authLoading}
-                    onClick={handleGoogleGmailLogin}
-                    id="auth-google-gmail-btn"
-                    className="w-full min-h-[52px] bg-white hover:bg-orange-50 active:scale-[0.99] text-[#3D1C0A] font-black text-sm sm:text-base py-3.5 px-5 rounded-2xl border-2 border-orange-200 shadow-sm flex items-center justify-center gap-3 cursor-pointer transition-all"
-                  >
-                    {authLoading ? (
-                      <RefreshCw className="w-5 h-5 animate-spin text-[#FF6B00]" />
-                    ) : (
-                      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                        <path
-                          fill="#EA4335"
-                          d="M12 5c1.6 0 3.1.6 4.2 1.7l3.1-3.1C17.4 1.8 14.9 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
-                        />
-                        <path
-                          fill="#4285F4"
-                          d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.1-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.8z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 24c3.2 0 6-1.1 8-2.9l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 21.4 7.4 24 12 24z"
-                        />
-                      </svg>
-                    )}
-                    <span>
-                      {authLoading
-                        ? 'Connecting to Google...'
-                        : 'Continue with Google (Gmail)'}
-                    </span>
-                  </button>
-
-                  {/* Actionable Inline Error + Retry Recovery */}
-                  {authError && (
-                    <div
-                      id="auth-google-error-box"
-                      className="bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm p-4 rounded-2xl space-y-3"
-                    >
-                      <div className="flex items-start gap-2.5">
-                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                        <span className="font-semibold leading-relaxed">{authError}</span>
+                  {!otpSent ? (
+                    <form onSubmit={handleSendOtp} className="space-y-4">
+                      <div>
+                        <label className="block text-[11px] font-extrabold text-[#3D1C0A] uppercase mb-1.5">
+                          Mobile Number * (+91 India)
+                        </label>
+                        <div className="flex gap-2">
+                          <div className="bg-[#FFF8F0] border border-orange-200 rounded-xl px-3 py-3 text-xs sm:text-sm font-extrabold text-[#3D1C0A] flex items-center justify-center shrink-0">
+                            🇮🇳 +91
+                          </div>
+                          <input
+                            type="tel"
+                            maxLength={10}
+                            value={phoneMobile}
+                            onChange={(e) => setPhoneMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                            placeholder="Enter 10-digit mobile"
+                            required
+                            className="w-full min-h-[48px] bg-[#FFF8F0] border border-orange-200 rounded-xl px-4 py-3 text-sm sm:text-base font-bold text-[#3D1C0A] focus:outline-none focus:border-[#FF6B00]"
+                          />
+                        </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      {authError && (
+                        <div className="bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm p-3.5 rounded-2xl flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                          <span className="font-semibold">{authError}</span>
+                        </div>
+                      )}
+
+                      <div id="recaptcha-container" />
+
+                      <button
+                        type="submit"
+                        disabled={authLoading || phoneMobile.replace(/\D/g, '').length !== 10}
+                        id="auth-send-otp-btn"
+                        className="w-full min-h-[52px] bg-linear-to-r from-[#FF6B00] to-[#F59E0B] hover:brightness-105 disabled:opacity-50 text-white font-black text-sm sm:text-base py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {authLoading ? (
+                          <RefreshCw className="w-5 h-5 animate-spin text-white" />
+                        ) : (
+                          <>
+                            <span>Send OTP</span>
+                            <ArrowRight className="w-5 h-5" />
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleVerifyOtp} className="space-y-4">
+                      <div>
+                        <label className="block text-[11px] font-extrabold text-[#3D1C0A] uppercase mb-1.5">
+                          Enter 6-Digit OTP Code
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={6}
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="• • • • • •"
+                          required
+                          className="w-full min-h-[52px] text-center tracking-[0.75em] text-xl sm:text-2xl font-black bg-[#FFF8F0] border border-orange-200 rounded-xl px-4 py-3 text-[#3D1C0A] focus:outline-none focus:border-[#FF6B00]"
+                        />
+                      </div>
+
+                      {authError && (
+                        <div className="bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm p-3.5 rounded-2xl flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                          <span className="font-semibold">{authError}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between text-xs font-bold text-[#7C4A22]">
+                        <span>
+                          {countdown > 0 ? `Resend OTP in ${countdown}s` : 'Did not receive code?'}
+                        </span>
                         <button
                           type="button"
-                          onClick={handleGoogleGmailLogin}
-                          disabled={authLoading}
-                          id="auth-google-retry-btn"
-                          className="min-h-[44px] flex-1 bg-[#FF6B00] hover:brightness-105 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                          disabled={!canResend || authLoading}
+                          onClick={handleSendOtp}
+                          className={`cursor-pointer ${canResend ? 'text-[#FF6B00] underline font-black' : 'text-stone-400 cursor-not-allowed'}`}
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Retry Google Sign-In</span>
+                          Resend OTP
                         </button>
-
-                        {canOfferRedirect && (
-                          <button
-                            type="button"
-                            onClick={handleGoogleRedirectLogin}
-                            disabled={authLoading}
-                            id="auth-google-redirect-btn"
-                            className="min-h-[44px] flex-1 bg-white hover:bg-orange-50 text-[#3D1C0A] border border-orange-200 font-bold text-xs px-4 py-2 rounded-xl cursor-pointer"
-                          >
-                            Use Redirect Sign-In
-                          </button>
-                        )}
                       </div>
-                    </div>
+
+                      <button
+                        type="submit"
+                        disabled={authLoading || otpCode.length !== 6}
+                        id="auth-verify-otp-btn"
+                        className="w-full min-h-[52px] bg-linear-to-r from-[#FF6B00] to-[#F59E0B] hover:brightness-105 disabled:opacity-50 text-white font-black text-sm sm:text-base py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {authLoading ? (
+                          <RefreshCw className="w-5 h-5 animate-spin text-white" />
+                        ) : (
+                          <>
+                            <span>Verify &amp; Continue</span>
+                            <CheckCircle2 className="w-5 h-5" />
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOtpSent(false);
+                          setOtpCode('');
+                          setAuthError(null);
+                        }}
+                        className="w-full text-center text-xs text-[#7C4A22] hover:text-[#FF6B00] font-bold py-1 cursor-pointer"
+                      >
+                        ← Change Mobile Number
+                      </button>
+                    </form>
                   )}
 
                   <div className="bg-[#FFF8F0] rounded-2xl p-3.5 border border-[#F5E6D3] text-xs text-[#7C4A22] leading-relaxed">
-                    If your browser blocks the Google sign-in window, allow popups for this site and tap <strong className="text-[#3D1C0A]">Retry Google Sign-In</strong>.
+                    Powered by Firebase Phone Authentication. Ensure SMS phone authentication provider is enabled in your Firebase Console.
                   </div>
                 </div>
               </motion.div>
